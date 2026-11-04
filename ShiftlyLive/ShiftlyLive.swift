@@ -20,25 +20,34 @@ private func remainingMinutes(until deadline: Date, at now: Date) -> Int {
 struct ShiftlyLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ShiftlyBreakAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Label("Shiftly · Перерыв", systemImage: "cup.and.saucer.fill")
-                        .font(.headline).foregroundStyle(.purple)
-                    Spacer()
-                    Text("\(Int(context.state.limitSeconds / 60)) мин лимит")
-                        .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image("IslandIconBreak")
+                        .resizable().scaledToFit().frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Shiftly · Перерыв").font(.headline).foregroundStyle(.purple)
+                        Text("Остаток времени отдыха").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(Int(context.state.limitSeconds / 60)) мин")
+                        .font(.caption.bold()).foregroundStyle(.secondary)
                 }
-                Text(timerInterval: Date()...max(Date(), context.state.deadline), countsDown: true)
-                    .font(.title.bold()).monospacedDigit()
+                HStack(alignment: .firstTextBaseline) {
+                    Text(timerInterval: context.attributes.startedAt...context.state.deadline, countsDown: true)
+                        .font(.system(size: 31, weight: .bold, design: .rounded))
+                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                    Spacer(minLength: 0)
+                    Text("До лимита").font(.caption).foregroundStyle(.secondary)
+                }
                 ProgressView(value: breakProgress(context.state)).tint(.purple)
                 Button(intent: FinishBreakIntent()) {
-                    Label("Вернулся к работе", systemImage: "play.fill")
-                        .font(.subheadline.bold())
-                        .frame(maxWidth: .infinity)
-                }.buttonStyle(.borderedProminent).tint(.purple)
+                    Label("Вернулся к работе", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.bold()).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.purple)
             }
             .padding(14)
-            .activityBackgroundTint(.black)
+            .activityBackgroundTint(Color(red: 0.06, green: 0.05, blue: 0.10))
             .activitySystemActionForegroundColor(.purple)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -47,11 +56,11 @@ struct ShiftlyLiveWidget: Widget {
                         .font(.subheadline)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: Date()...max(Date(), context.state.deadline),
-                         countsDown: true)
-                        .font(.subheadline.monospacedDigit())
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                        Text("\(remainingMinutes(until: context.state.deadline, at: timeline.date))м")
+                            .font(.subheadline.bold().monospacedDigit())
+                            .lineLimit(1)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(alignment: .center, spacing: 12) {
@@ -84,7 +93,7 @@ struct ShiftlyLiveWidget: Widget {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .frame(width: 43, alignment: .trailing)
+                .frame(width: 48, alignment: .trailing)
             } minimal: {
                 Image("IslandIconBreak")
                     .resizable()

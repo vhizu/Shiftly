@@ -61,10 +61,12 @@ struct HomeView: View {
                             VStack(spacing: 10) {
                                 Label(store.isOnBreak ? "Перерыв" : "Смена идёт", systemImage: store.isOnBreak ? "cup.and.saucer.fill" : "briefcase.fill")
                                     .font(.headline).foregroundStyle(violet)
+                                Text("Начало смены: " + s.start.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(.secondary)
                                 ShiftRing(remaining: store.isOnBreak ? max(0, remaining) : max(0, (s.end ?? s.start.addingTimeInterval(43200)).timeIntervalSince(now)),
                                           total: store.isOnBreak ? Double(s.breakLimitMinutes * 60) : 43200,
                                           subtitle: store.isOnBreak ? "ОСТАЛОСЬ ОТДЫХА" : "ДО КОНЦА СМЕНЫ")
-                                Text(store.isOnBreak ? "Осталось из лимита перерывов" : "Осталось до 12 часов с начала смены")
+                                Text(store.isOnBreak ? "Перерыв активен · вернись кнопкой ниже" : "Лимит перерывов: \(s.breakLimitMinutes) мин · осталось \(Int(max(0, remaining) / 60)) мин")
                                     .font(.caption).foregroundStyle(.secondary)
                                 ProgressView(value: min(1, spent / Double(max(1, s.breakLimitMinutes * 60)))).tint(violet)
                                 if store.isOnBreak {
@@ -296,7 +298,7 @@ struct ShiftRing: View {
             VStack(spacing: 9) {
                 Text(subtitle).font(.caption2.bold()).foregroundStyle(.secondary)
                 Text(timeString(remaining)).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
-                Text("Shiftly 💜").font(.caption).foregroundStyle(.purple)
+                Text("SHIFTLY · OPERATOR").font(.caption2.bold()).tracking(1.2).foregroundStyle(.purple)
             }.padding(20)
         }.frame(width: 244, height: 244).padding(.vertical, 10)
     }
@@ -368,6 +370,7 @@ struct SessionEditor: View {
     @State private var end = Date()
     @State private var hasEnd = true
     @State private var ready = false
+    @State private var addingPastBreak = false
     var body: some View {
         Form {
             if let session = store.data.sessions.first(where: { $0.id == sessionID }) {
@@ -380,6 +383,9 @@ struct SessionEditor: View {
                     }.disabled(hasEnd && end <= start)
                 }
                 Section("Перекуры") {
+                    Button { addingPastBreak = true } label: {
+                        Label("Добавить забытый перекур", systemImage: "plus.circle.fill")
+                    }
                     ForEach(session.breaks) { item in
                         NavigationLink {
                             BreakEditor(sessionID: sessionID, item: item)
@@ -395,9 +401,49 @@ struct SessionEditor: View {
             }
         }
         .navigationTitle("Корректировка")
+        .sheet(isPresented: $addingPastBreak) { PastBreakEditor(sessionID: sessionID) }
         .onAppear {
             guard !ready, let session = store.data.sessions.first(where: { $0.id == sessionID }) else { return }
             start = session.start; end = session.end ?? Date(); hasEnd = session.end != nil; ready = true
+        }
+    }
+}
+
+struct PastBreakEditor: View {
+    @EnvironmentObject var store: ShiftStore
+    @Environment(\.dismiss) private var dismiss
+    let sessionID: UUID
+    @State private var start = Date().addingTimeInterval(-15 * 60)
+    @State private var end = Date()
+    @State private var errorMessage: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Забытый перекур") {
+                    DatePicker("Начало", selection: $start, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("Конец", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                    Text("Перекур добавится в историю смены и будет учтён в лимите. Таймер и уведомление не запускаются.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
+                }
+                Section {
+                    Button("Добавить перекур") {
+                        if let error = store.addPastBreak(sessionID: sessionID, start: start, end: end) {
+                            errorMessage = error
+                        } else { dismiss() }
+                    }
+                    .disabled(end <= start || end > Date())
+                }
+            }
+            .navigationTitle("Добавить перекур")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { dismiss() }
+                }
+            }
         }
     }
 }

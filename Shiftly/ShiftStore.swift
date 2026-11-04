@@ -11,7 +11,9 @@ import WidgetKit
         if let shared = ShiftlyShared.defaults.data(forKey: key), let decoded = try? JSONDecoder().decode(ShiftData.self, from: shared) {
             if decoded.sessions.count >= data.sessions.count { data = decoded }
         }
-        synchronize()
+        // Recreate the scheduled shift from its real start time after reinstall.
+        // No need to press "Start shift" at the time the app is first opened.
+        synchronize(now: Date())
         ShiftReminders.schedule(store: self)
     }
     var current: WorkSession? {
@@ -34,6 +36,19 @@ import WidgetKit
             if let interval = regularInterval(on: day) { ensureSession(start: interval.start, end: interval.end, now: now) }
         }
         for extra in data.extras { ensureSession(start: extra.start, end: extra.end, now: now) }
+
+        // Explicitly reconcile the shift containing *now*, including a night
+        // shift that began yesterday. This is important on a fresh install
+        // opened after the shift began (e.g. 23:30 for a 20:00 night shift).
+        for offset in -1...0 {
+            guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: now)),
+                  let interval = regularInterval(on: day),
+                  interval.start <= now, now < interval.end else { continue }
+            ensureSession(start: interval.start, end: interval.end, now: now)
+        }
+        for extra in data.extras where extra.start <= now && now < extra.end {
+            ensureSession(start: extra.start, end: extra.end, now: now)
+        }
     }
     private func applyExternalBreakEnd() {
         let defaults = ShiftlyShared.defaults
@@ -80,6 +95,25 @@ import WidgetKit
         data.sessions[i].breaks[j].end = end
         save()
     }
+    // Record a completed break retrospectively without starting a Live Activity.
+    func addPastBreak(sessionID: UUID, start: Date, end: Date) -> String? {
+        let now = Date()
+        guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }) else { return "Смена не найдена" }
+        let session = data.sessions[i]
+        guard start < end else { return "Конец должен быть позже начала" }
+        guard end <= now else { return "Нельзя добавить перекур из будущего" }
+        guard start >= session.start else { return "Перекур начинается раньше смены" }
+        if let sessionEnd = session.end, end > sessionEnd { return "Перекур заканчивается после смены" }
+        guard !session.breaks.contains(where: { existing in
+            let existingEnd = existing.end ?? now
+            return start < existingEnd && end > existing.start
+        }) else { return "Это время пересекается с другим перекуром" }
+        data.sessions[i].breaks.append(BreakSession(start: start, end: end))
+        data.sessions[i].breaks.sort { $0.start < $1.start }
+        save()
+        return nil
+    }
+
     func replaceData(_ replacement: ShiftData) { data = replacement; save(); synchronize() }
 
     var isOnBreak: Bool { current?.breaks.last?.end == nil && current?.breaks.last != nil }

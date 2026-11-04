@@ -1,22 +1,9 @@
-# Shiftly 1.4.0 — полный кандидат исходников
+# Shiftly 1.4.1 — build candidate
 
-Включено:
-- Автоматический график Д/Д/В/Н/Н/В/В/В с привязкой 04.11.2026, синхронизация истории при открытии, дополнительные смены.
-- Уведомления за 60 и 15 минут до смены; предупреждения при 30/15/5 минутах остатка; забытый перекур (45 минут).
-- Круговой таймер, реакции существующего маскота на режим, тактильный отклик.
-- Live Activity без серой картинки на экране блокировки, кнопка App Intent «Вернулся к работе».
-- Dynamic Island с прежними изображениями, компактный счётчик минут.
-- Домашний виджет WidgetKit.
-- Редактирование времени смены и перерывов через историю, редактирование заметок журнала.
-- Журнал ручьёв, прогноз остатка отдыха, статистика, календарь, зарплата, CSV, JSON-бэкап/восстановление.
-- Общие модели, UserDefaults App Group для App Intent и WidgetKit.
+- Updated lock screen Live Activity layout: no large square image placeholder, compact avatar icon and prominent return-to-work action.
+- Dynamic Island expanded timer uses remaining minutes instead of a long hh:mm:ss string.
+- Fixed home widget Info.plist bundle identifier.
+- Updated main screen break/shift status copy and ring branding.
+- GitHub Actions validates version, both extension bundle IDs and compiled Live Activity assets before uploading IPA.
 
-Проверено: синтаксический разбор всех Swift-файлов (`swiftc -frontend -parse`), структура project.yml, ZIP целостность.
-
-НЕ ПРОВЕРЕНО: полноценная сборка Xcode/macOS, установка IPA, интерактивность App Intent на iPhone, обновление минут в островке. В этом окружении нет Xcode/iOS SDK, поэтому готовый IPA здесь создать нельзя.
-
-ВАЖНО ДЛЯ GBOX: App Group `group.com.shiftly.app` требует соответствующих entitlements при подписи приложения и расширений. Если GBox не поддерживает App Groups для выбранной подписи, интерактивная кнопка и виджет могут не синхронизироваться с приложением. Не удаляйте текущую установленную версию до проверки новой.
-
-Автоматический график считает запланированные смены, а не доказывает фактическую явку. Система iOS не гарантирует пробуждение приложения ровно в начале смены. Уведомления планируются на 14 дней и продлеваются при следующем открытии приложения.
-
-Путь сборки: загрузить полный проект в GitHub, запустить `.github/workflows/build.yml`, скачать артефакт unsigned IPA, подписать GBox с нужными возможностями.
+**Important:** Xcode is unavailable in this environment. Build and on-device behavior have NOT been verified. Run GitHub Actions and check the actual signed IPA on iPhone. App Group capabilities may require signing entitlements from GBox. Keep the installed version and back up history until testing is complete.
