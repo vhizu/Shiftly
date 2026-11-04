@@ -1,0 +1,11 @@
+Shiftly 1.3 corrected assets
+All images are individual PNGs with transparency.
+MascotWork: a_detailed_anime_style_illustration_on_a_transpare.png
+MascotBreak: a_clean_png_cutout_transparent_background_of_the.png
+MascotDone: a_detailed_anime_style_illustration_the_same_youn.png
+MascotLock: a_high_detail_anime_style_illustration_on_a_transp.png
+MascotIsland: a_clean_high_resolution_anime_style_illustration.png
+MascotDone: provisional thumbs-up illustration; not the requested victory-sign final.
+Xcode compilation not performed.
+
+MascotDone replaced with user-approved image on 2026-11-04; white background removed programmatically.

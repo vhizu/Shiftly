@@ -1,0 +1,1 @@
+Shiftly 1.3 Island integration: compactLeading and minimal use IslandIconBreak; expanded uses IslandExpandedBreak. Other 3 face assets are included for later states. No Xcode compilation performed.
