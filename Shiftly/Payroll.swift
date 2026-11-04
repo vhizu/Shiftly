@@ -42,6 +42,7 @@ func nightHours(in interval: DateInterval) -> Double {
     return total
 }
 
+@MainActor
 func payroll(for store: ShiftStore, settings: PayrollSettings, month: Date) -> PaySummary {
     let cal = Calendar.current
     guard let range = cal.dateInterval(of: .month, for: month) else { return PaySummary() }
