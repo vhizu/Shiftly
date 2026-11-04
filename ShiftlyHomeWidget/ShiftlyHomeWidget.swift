@@ -1,9 +1,10 @@
 import SwiftUI
 import WidgetKit
+import AppIntents
 
-struct ShiftlyEntry: TimelineEntry { let date: Date; let title: String; let detail: String }
+struct ShiftlyEntry: TimelineEntry { let date: Date; let title: String; let detail: String; let canStart: Bool }
 struct ShiftlyProvider: TimelineProvider {
-    func placeholder(in context: Context) -> ShiftlyEntry { ShiftlyEntry(date: Date(), title: "Shiftly 💜", detail: "Скоро смена") }
+    func placeholder(in context: Context) -> ShiftlyEntry { ShiftlyEntry(date: Date(), title: "Shiftly 💜", detail: "Скоро смена", canStart: false) }
     func getSnapshot(in context: Context, completion: @escaping (ShiftlyEntry) -> Void) { completion(entry(at: Date())) }
     func getTimeline(in context: Context, completion: @escaping (Timeline<ShiftlyEntry>) -> Void) {
         let now = Date()
@@ -13,14 +14,14 @@ struct ShiftlyProvider: TimelineProvider {
         let defaults = UserDefaults(suiteName: "group.com.shiftly.app") ?? .standard
         guard let raw = defaults.data(forKey: "shiftly.v1.data"),
               let data = try? JSONDecoder().decode(ShiftData.self, from: raw) else {
-            return ShiftlyEntry(date: date, title: "Shiftly 💜", detail: "Открой приложение")
+            return ShiftlyEntry(date: date, title: "Shiftly 💜", detail: "Открой приложение", canStart: false)
         }
         if let session = data.sessions.last(where: { $0.start <= date && ($0.end == nil || $0.end! > date) }) {
             let active = session.breaks.last?.end == nil && !session.breaks.isEmpty
             let used = session.breaks.reduce(0.0) { $0 + max(0, ($1.end ?? date).timeIntervalSince($1.start)) }
-            return ShiftlyEntry(date: date, title: active ? "☕ Перерыв" : "💜 Работаю", detail: "Отдых: \(max(0, session.breakLimitMinutes - Int(used / 60))) мин")
+            return ShiftlyEntry(date: date, title: active ? "☕ Перерыв" : "💜 Работаю", detail: "Отдых: \(max(0, session.breakLimitMinutes - Int(used / 60))) мин", canStart: !active)
         }
-        return ShiftlyEntry(date: date, title: "💤 Отдыхаем", detail: "Следующая смена — по графику")
+        return ShiftlyEntry(date: date, title: "💤 Отдыхаем", detail: "Следующая смена — по графику", canStart: false)
     }
 }
 struct ShiftlyHomeWidget: Widget {
@@ -30,6 +31,14 @@ struct ShiftlyHomeWidget: Widget {
                 Text(entry.title).font(.headline)
                 Text(entry.detail).font(.caption)
                 Spacer(minLength: 0)
+                if entry.canStart {
+                    Button(intent: StartBreakIntent()) {
+                        Label("Начать перекур", systemImage: "play.fill")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                }
                 Text("SHIFTLY").font(.caption2.bold()).foregroundStyle(.purple)
             }
             .padding().containerBackground(.background, for: .widget)

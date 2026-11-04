@@ -14,6 +14,7 @@ import WidgetKit
         // Recreate the scheduled shift from its real start time after reinstall.
         // No need to press "Start shift" at the time the app is first opened.
         synchronize(now: Date())
+        AutomaticBackups.save(data)
         ShiftReminders.schedule(store: self)
     }
     var current: WorkSession? {
@@ -22,11 +23,14 @@ import WidgetKit
     }
     var notes: [LineNote] { data.notes ?? [] }
     var autoEnabled: Bool { data.autoEnabled ?? true }
+    var perBreakLimitMinutes: Int { max(1, data.perBreakLimitMinutes ?? 15) }
+    func setPerBreakLimit(_ minutes: Int) { data.perBreakLimitMinutes = max(1, minutes); save() }
     func setAuto(_ enabled: Bool) { data.autoEnabled = enabled; save(); synchronize() }
     func setReminders(_ enabled: Bool) { data.remindEnabled = enabled; save(); ShiftReminders.schedule(store: self) }
     func addNote(_ note: LineNote) { if data.notes == nil { data.notes = [] }; data.notes!.append(note); save() }
     func removeNote(_ id: UUID) { data.notes?.removeAll { $0.id == id }; save() }
     func synchronize(now: Date = Date()) {
+        applyExternalBreakStart()
         applyExternalBreakEnd()
         guard autoEnabled else { return }
         let cal = Calendar.current
@@ -49,6 +53,28 @@ import WidgetKit
         for extra in data.extras where extra.start <= now && now < extra.end {
             ensureSession(start: extra.start, end: extra.end, now: now)
         }
+    }
+    private func applyExternalBreakStart() {
+        let defaults = ShiftlyShared.defaults
+        let stamp = defaults.double(forKey: ShiftlyShared.startRequestKey)
+        guard stamp > 0 else { return }
+        defaults.removeObject(forKey: ShiftlyShared.startRequestKey)
+        let startedAt = Date(timeIntervalSince1970: stamp)
+        // Merge the widget transaction even if the break was immediately finished
+        // from the lock screen before the main app became active.
+        guard let raw = defaults.data(forKey: key),
+              let snapshot = try? JSONDecoder().decode(ShiftData.self, from: raw),
+              let session = snapshot.sessions.last(where: { s in
+                  s.breaks.contains(where: { abs($0.start.timeIntervalSince(startedAt)) < 3 })
+              }) else { return }
+        data = snapshot
+        save()
+        guard session.breaks.contains(where: { abs($0.start.timeIntervalSince(startedAt)) < 3 && $0.end == nil }) else { return }
+        let remaining = max(0, Double(session.breakLimitMinutes * 60) - breakSeconds(session, now: startedAt))
+        BreakAlerts.start(remainingSeconds: remaining,
+                          limitSeconds: Double(session.breakLimitMinutes * 60),
+                          singleBreakSeconds: Double(perBreakLimitMinutes * 60),
+                          breakStartedAt: startedAt)
     }
     private func applyExternalBreakEnd() {
         let defaults = ShiftlyShared.defaults
@@ -89,11 +115,33 @@ import WidgetKit
         data.notes?[i] = note
         save()
     }
-    func editBreak(sessionID: UUID, breakID: UUID, start: Date, end: Date?) {
-        guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }), let j = data.sessions[i].breaks.firstIndex(where: { $0.id == breakID }) else { return }
+    func editBreak(sessionID: UUID, breakID: UUID, start: Date, end: Date) -> String? {
+        guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }),
+              let j = data.sessions[i].breaks.firstIndex(where: { $0.id == breakID }) else { return "Перекур не найден" }
+        let session = data.sessions[i]
+        let now = Date()
+        guard start < end else { return "Конец должен быть позже начала" }
+        guard end <= now else { return "Нельзя указать будущее время" }
+        guard start >= session.start else { return "Перекур начинается раньше смены" }
+        if let shiftEnd = session.end, end > shiftEnd { return "Перекур заканчивается после смены" }
+        guard !session.breaks.contains(where: { other in
+            other.id != breakID && start < (other.end ?? now) && end > other.start
+        }) else { return "Время пересекается с другим перекуром" }
+        let wasActive = data.sessions[i].breaks[j].end == nil
         data.sessions[i].breaks[j].start = start
         data.sessions[i].breaks[j].end = end
+        data.sessions[i].breaks.sort { $0.start < $1.start }
         save()
+        if wasActive { BreakAlerts.stop() }
+        return nil
+    }
+    func removeBreak(sessionID: UUID, breakID: UUID) {
+        guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }),
+              let j = data.sessions[i].breaks.firstIndex(where: { $0.id == breakID }) else { return }
+        let wasActive = data.sessions[i].breaks[j].end == nil
+        data.sessions[i].breaks.remove(at: j)
+        save()
+        if wasActive { BreakAlerts.stop() }
     }
     // Record a completed break retrospectively without starting a Live Activity.
     func addPastBreak(sessionID: UUID, start: Date, end: Date) -> String? {
@@ -121,7 +169,20 @@ import WidgetKit
     func workSeconds(_ session: WorkSession, now: Date = Date()) -> TimeInterval { max(0, (session.end ?? now).timeIntervalSince(session.start) - breakSeconds(session, now: now)) }
     func startWork() { guard current == nil else { return }; data.sessions.append(WorkSession(start: Date(), breakLimitMinutes: data.limitMinutes)); save(); BreakAlerts.requestPermission() }
     func endWork() { guard let i = data.sessions.lastIndex(where: { $0.start <= Date() && ($0.end == nil || $0.end! > Date()) }) else { return }; data.sessions[i].isAutomatic = false; let now = Date(); if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = now }; data.sessions[i].end = now; save(); BreakAlerts.stop() }
-    func toggleBreak() { synchronize(); guard let i = data.sessions.lastIndex(where: { $0.start <= Date() && ($0.end == nil || $0.end! > Date()) }) else { return }; if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = Date(); BreakAlerts.stop() } else { let now = Date(); let remaining = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: now)); data.sessions[i].breaks.append(BreakSession(start: now)); BreakAlerts.start(remainingSeconds: remaining, limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60)) }; save() }
+    func toggleBreak() {
+        synchronize()
+        let now = Date()
+        guard let i = data.sessions.lastIndex(where: { $0.start <= now && ($0.end == nil || $0.end! > now) }) else { return }
+        if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) {
+            data.sessions[i].breaks[j].end = now
+            BreakAlerts.stop()
+        } else {
+            let remaining = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: now))
+            data.sessions[i].breaks.append(BreakSession(start: now))
+            BreakAlerts.start(remainingSeconds: remaining, limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60), singleBreakSeconds: Double(perBreakLimitMinutes * 60), breakStartedAt: now)
+        }
+        save()
+    }
     func setLimit(_ minutes: Int) { data.limitMinutes = max(1, minutes); save() }
     func addExtra(_ date: Date, night: Bool) -> Bool {
         let cal = Calendar.current
@@ -159,6 +220,7 @@ import WidgetKit
         if let raw = try? JSONEncoder().encode(data) {
             UserDefaults.standard.set(raw, forKey: key)
             ShiftlyShared.defaults.set(raw, forKey: key)
+            AutomaticBackups.save(data)
         }
         objectWillChange.send()
         WidgetCenter.shared.reloadAllTimelines()

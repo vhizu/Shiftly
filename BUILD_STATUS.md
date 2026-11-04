@@ -1,9 +1,10 @@
-# Shiftly 1.4.1 — build candidate
+# Shiftly 1.5.0 · build status
 
-- Updated lock screen Live Activity layout: no large square image placeholder, compact avatar icon and prominent return-to-work action.
-- Dynamic Island expanded timer uses remaining minutes instead of a long hh:mm:ss string.
-- Fixed home widget Info.plist bundle identifier.
-- Updated main screen break/shift status copy and ring branding.
-- GitHub Actions validates version, both extension bundle IDs and compiled Live Activity assets before uploading IPA.
+SOURCE CREATED — source archive verified locally; macOS/Xcode build and GBox installation **not yet tested**.
 
-**Important:** Xcode is unavailable in this environment. Build and on-device behavior have NOT been verified. Run GitHub Actions and check the actual signed IPA on iPhone. App Group capabilities may require signing entitlements from GBox. Keep the installed version and back up history until testing is complete.
+1. Upload all files including hidden `.github` to main.
+2. Wait for GitHub Actions green `Build Shiftly 1.5.0 IPA`.
+3. Download its unsigned artifact, extract IPA, sign all bundles in GBox.
+4. Test interactive widget, Live Activity, 15-minute timer, backup export and data restore.
+
+Preserve already working 1.4.3 signed IPA for rollback.

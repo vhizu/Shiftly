@@ -26,10 +26,10 @@ struct ShiftlyLiveWidget: Widget {
                         .resizable().scaledToFit().frame(width: 34, height: 34)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Shiftly · Перерыв").font(.headline).foregroundStyle(.purple)
-                        Text("Остаток времени отдыха").font(.caption).foregroundStyle(.secondary)
+                        Text("До конца текущего перекура").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    Text("\(Int(context.state.limitSeconds / 60)) мин")
+                    Text("Лимит смены: \(Int(context.state.limitSeconds / 60)) мин")
                         .font(.caption.bold()).foregroundStyle(.secondary)
                 }
                 HStack(alignment: .firstTextBaseline) {
@@ -37,7 +37,10 @@ struct ShiftlyLiveWidget: Widget {
                         .font(.system(size: 31, weight: .bold, design: .rounded))
                         .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
                     Spacer(minLength: 0)
-                    Text("До лимита").font(.caption).foregroundStyle(.secondary)
+                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                        Text("Всего: \(remainingMinutes(until: context.state.totalDeadline, at: timeline.date))м")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 ProgressView(value: breakProgress(context.state)).tint(.purple)
                 Button(intent: FinishBreakIntent()) {
@@ -71,7 +74,7 @@ struct ShiftlyLiveWidget: Widget {
                             .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Отдыхай, оператор 💜")
+                            Text("Перекур · отдыхай 💜")
                                 .font(.caption)
                                 .lineLimit(2)
                             ProgressView(value: breakProgress(context.state))

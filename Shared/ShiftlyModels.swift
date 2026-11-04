@@ -35,4 +35,6 @@ struct ShiftData: Codable {
     var notes: [LineNote]? = nil
     var autoEnabled: Bool? = nil
     var remindEnabled: Bool? = nil
+    // Optional: decoding backups made before 1.5 remains compatible.
+    var perBreakLimitMinutes: Int? = nil
 }

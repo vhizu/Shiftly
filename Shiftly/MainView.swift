@@ -12,11 +12,29 @@ struct MainView: View {
             StatsView().tabItem { Label("Статистика", systemImage: "chart.bar.fill") }
             CalendarView().tabItem { Label("График", systemImage: "calendar") }
             PayrollView().tabItem { Label("Зарплата", systemImage: "rublesign.circle") }
-            HistoryView().tabItem { Label("История", systemImage: "clock.arrow.circlepath") }
-            LineJournalView().tabItem { Label("Журнал", systemImage: "wrench.and.screwdriver") }
-            SettingsView().tabItem { Label("Настройки", systemImage: "gearshape") }
+            MoreView().tabItem { Label("Ещё", systemImage: "ellipsis.circle") }
         }
     }
+}
+
+struct MoreView: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                NavigationLink { HistoryView() } label: { Label("История смен и перекуров", systemImage: "clock.arrow.circlepath") }
+                NavigationLink { LineJournalView() } label: { Label("Журнал оператора", systemImage: "wrench.and.screwdriver") }
+                NavigationLink { SettingsView() } label: { Label("Настройки", systemImage: "gearshape") }
+            }
+            .navigationTitle("Ещё")
+        }
+    }
+}
+
+func ruDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "ru_RU")
+    formatter.dateFormat = "d MMM yyyy 'в' HH:mm"
+    return formatter.string(from: date)
 }
 
 func timeString(_ seconds: TimeInterval) -> String {
@@ -26,66 +44,125 @@ func timeString(_ seconds: TimeInterval) -> String {
 
 struct MascotPanel: View {
     let mode: Int // 0 off, 1 work, 2 break
+    let remainingSingle: TimeInterval
+    var compact: Bool = false
     @State private var tapped = false
-    private var asset: String { mode == 2 ? "MascotBreak" : mode == 1 ? "MascotWork" : "MascotDone" }
+    private var asset: String { mode == 2 && remainingSingle > 300 ? "MascotBreak" : mode > 0 ? "MascotWork" : "MascotDone" }
+    private var stage: String {
+        guard mode == 2 else { return mode == 1 ? "Рабочий настрой" : "Сладких снов" }
+        if remainingSingle <= 0 { return "Время вышло!" }
+        if remainingSingle <= 60 { return "Осталась минута" }
+        if remainingSingle <= 300 { return "Скоро обратно" }
+        return "Кофейная пауза"
+    }
     private var caption: String {
-        if tapped { return mode == 2 ? "Отдыхай, я слежу за временем 💜" : mode == 1 ? "Держим темп, оператор!" : "Ты заслужил отдых 💜" }
+        if tapped { return mode == 2 ? "Я слежу за твоими 15 минутами 💜" : mode == 1 ? "Держим темп, оператор!" : "Ты заслужил отдых 💜" }
+        if mode == 2 && remainingSingle <= 0 { return "Эй, пора заканчивать перекур! ⏰" }
+        if mode == 2 && remainingSingle <= 60 { return "Осталась минута! ☕" }
+        if mode == 2 && remainingSingle <= 300 { return "Допивай кофе, скоро работать 💜" }
         return mode == 2 ? "Наконец-то перерыв ☕" : mode == 1 ? "Смена в деле!" : "До следующей смены отдыхаем"
     }
     var body: some View {
+        let height: CGFloat = compact ? 96 : 232
         ZStack(alignment: .bottomLeading) {
-            Image(asset).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 232)
-            LinearGradient(colors: [.clear, .black.opacity(0.86)], startPoint: .center, endPoint: .bottom)
-            Text(caption).font(.headline).padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            Image(asset).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: height)
+            LinearGradient(colors: [.clear, .black.opacity(0.88)], startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: mode == 2 && remainingSingle <= 60 ? "exclamationmark.circle.fill" : "heart.fill")
+                        .symbolEffect(.pulse, options: .repeating)
+                    Text(stage.uppercased())
+                }
+                .font(.caption2.bold()).foregroundStyle(remainingSingle <= 60 && mode == 2 ? .orange : violet)
+                Text(caption).font(compact ? .caption : .headline).lineLimit(compact ? 2 : 3)
+            }.padding(compact ? 9 : 14)
         }
-        .frame(height: 232)
+        .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(violet.opacity(0.6), lineWidth: 1))
-        .onTapGesture { tapped.toggle() }
+        .onTapGesture { tapped.toggle(); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
         .accessibilityLabel("Операторша. " + caption)
     }
 }
 
 struct HomeView: View {
     @EnvironmentObject var store: ShiftStore
+    @AppStorage("shiftly.compactHome") private var compact = false
     var body: some View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let now = context.date
                 ScrollView {
-                    VStack(spacing: 14) {
-                        MascotPanel(mode: store.current == nil ? 0 : store.isOnBreak ? 2 : 1)
+                    VStack(spacing: compact ? 10 : 14) {
+                        HStack {
+                            Text("Рабочая панель").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button { compact.toggle() } label: {
+                                Label(compact ? "Крупно" : "Компактно", systemImage: compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+                                    .font(.caption)
+                            }
+                        }
+                        let active = store.current?.breaks.last(where: { $0.end == nil })
+                        let singleRemaining = active.map { Double(store.perBreakLimitMinutes * 60) - now.timeIntervalSince($0.start) } ?? Double(store.perBreakLimitMinutes * 60)
+                        MascotPanel(mode: store.current == nil ? 0 : store.isOnBreak ? 2 : 1,
+                                    remainingSingle: singleRemaining, compact: compact)
                         if let s = store.current {
                             let spent = store.breakSeconds(s, now: now)
-                            let remaining = Double(s.breakLimitMinutes * 60) - spent
-                            VStack(spacing: 10) {
+                            let totalRemaining = Double(s.breakLimitMinutes * 60) - spent
+                            let scheduledEnd = s.end ?? s.start.addingTimeInterval(12 * 3600)
+                            let timeToEnd = max(0, scheduledEnd.timeIntervalSince(now))
+                            VStack(spacing: compact ? 8 : 12) {
                                 Label(store.isOnBreak ? "Перерыв" : "Смена идёт", systemImage: store.isOnBreak ? "cup.and.saucer.fill" : "briefcase.fill")
                                     .font(.headline).foregroundStyle(violet)
-                                Text("Начало смены: " + s.start.formatted(date: .abbreviated, time: .shortened))
+                                Text("Начало: " + ruDate(s.start))
                                     .font(.caption).foregroundStyle(.secondary)
-                                ShiftRing(remaining: store.isOnBreak ? max(0, remaining) : max(0, (s.end ?? s.start.addingTimeInterval(43200)).timeIntervalSince(now)),
-                                          total: store.isOnBreak ? Double(s.breakLimitMinutes * 60) : 43200,
-                                          subtitle: store.isOnBreak ? "ОСТАЛОСЬ ОТДЫХА" : "ДО КОНЦА СМЕНЫ")
-                                Text(store.isOnBreak ? "Перерыв активен · вернись кнопкой ниже" : "Лимит перерывов: \(s.breakLimitMinutes) мин · осталось \(Int(max(0, remaining) / 60)) мин")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                ProgressView(value: min(1, spent / Double(max(1, s.breakLimitMinutes * 60)))).tint(violet)
                                 if store.isOnBreak {
-                                    Text("Прогноз: \(Int(max(0, remaining) / 60)) мин на оставшуюся часть смены")
+                                    ShiftRing(remaining: singleRemaining,
+                                              total: Double(store.perBreakLimitMinutes * 60),
+                                              subtitle: "ТЕКУЩИЙ ПЕРЕКУР", compact: compact)
+                                } else if !compact {
+                                    ShiftRing(remaining: timeToEnd, total: 12 * 3600,
+                                              subtitle: "ДО КОНЦА СМЕНЫ")
+                                }
+                                VStack(alignment: .leading, spacing: 7) {
+                                    HStack {
+                                        Text("Общий лимит отдыха").font(.caption.bold())
+                                        Spacer()
+                                        Text("\(Int(max(0, totalRemaining) / 60)) / \(s.breakLimitMinutes) мин")
+                                            .font(.caption.bold().monospacedDigit())
+                                    }
+                                    ProgressView(value: min(1, max(0, totalRemaining / Double(max(1, s.breakLimitMinutes * 60)))))
+                                        .tint(totalRemaining < 300 ? .orange : violet)
+                                    Text("До конца смены: \(timeString(timeToEnd)) · отдых: \(timeString(max(0, totalRemaining)))")
                                         .font(.caption).foregroundStyle(.secondary)
+                                    Text("Прогноз: хватит ещё на \(Int(max(0, totalRemaining) / Double(max(1, store.perBreakLimitMinutes * 60)))) полных перекуров")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    if store.isOnBreak && singleRemaining < 0 {
+                                        Text("Перекур превышен на \(timeString(-singleRemaining))")
+                                            .font(.caption.bold()).foregroundStyle(.orange)
+                                    }
+                                    if totalRemaining < 0 {
+                                        Text("Общий лимит превышен на \(timeString(-totalRemaining))")
+                                            .font(.caption.bold()).foregroundStyle(.red)
+                                    }
                                 }
                                 HStack {
                                     metric("Работа", timeString(store.workSeconds(s, now: now)))
-                                    metric("Перерывы", timeString(spent))
+                                    metric("Перекуры", timeString(spent))
                                 }
-                                if remaining < 0 { Text("Лимит превышен на " + timeString(-remaining)).foregroundStyle(.red).font(.caption) }
-                            }.padding(16).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                            Button(store.isOnBreak ? "Вернуться к работе" : "Начать перерыв") { store.toggleBreak(); UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-                                .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                            Button("Завершить смену", role: .destructive) { store.endWork() }.padding(.top, 4)
+                            }.padding(compact ? 12 : 16).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                            Button(store.isOnBreak ? "Вернулся к работе" : "Начать перекур") {
+                                store.toggleBreak()
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            }
+                            .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                            Button("Завершить смену", role: .destructive) { store.endWork() }
                         } else {
-                            Text("Смена сейчас не идёт").font(.title2.bold())
-                            Text("По графику учёт включается автоматически. Можно начать внеплановую смену вручную.").foregroundStyle(.secondary)
-                            Button("Начать смену") { store.startWork() }.buttonStyle(.borderedProminent).controlSize(.large)
+                            Text("Сейчас выходной").font(.title2.bold())
+                            Text("Смены автоматически запускаются по графику. Внеплановую можно начать вручную.")
+                                .foregroundStyle(.secondary)
+                            Button("Начать смену") { store.startWork() }
+                                .buttonStyle(.borderedProminent).controlSize(.large)
                         }
                     }.padding()
                 }
@@ -107,8 +184,12 @@ struct StatsView: View {
                 let sessions = store.data.sessions.filter { Calendar.current.isDate($0.start, equalTo: month, toGranularity: .month) }
                 let completed = sessions.filter { $0.end != nil }
                 let hours = sessions.reduce(0.0) { $0 + store.workSeconds($1) } / 3600
-                let breaks = sessions.reduce(0.0) { $0 + store.breakSeconds($1) } / 3600
+                let breakSeconds = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
+                let allBreaks = sessions.flatMap(\.breaks)
+                let average = allBreaks.isEmpty ? 0 : Int(breakSeconds / Double(allBreaks.count) / 60)
                 let within = completed.filter { store.breakSeconds($0) <= Double($0.breakLimitMinutes * 60) }.count
+                let day = sessions.filter { Calendar.current.component(.hour, from: $0.start) < 14 }
+                let night = sessions.filter { Calendar.current.component(.hour, from: $0.start) >= 14 }
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Button { month = Calendar.current.date(byAdding: .month, value: -1, to: month)! } label: { Image(systemName: "chevron.left") }
@@ -116,13 +197,23 @@ struct StatsView: View {
                         Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
                     }
                     stat("Отработано", String(format: "%.1f ч", hours), "clock.fill")
-                    stat("Перерывы", String(format: "%.1f ч", breaks), "cup.and.saucer.fill")
+                    stat("Перерывы", String(format: "%.1f ч", breakSeconds / 3600), "cup.and.saucer.fill")
+                    stat("Средний перекур", "\(average) мин", "timer")
+                    stat("Количество перекуров", "\(allBreaks.count)", "number")
                     stat("Смены", "\(completed.count) завершено", "calendar.badge.checkmark")
+                    Text("Дневные и ночные смены").font(.title3.bold())
+                    comparison("Дневные", sessions: day, color: .green)
+                    comparison("Ночные", sessions: night, color: .purple)
+                    Text("Дисциплина лимитов").font(.title3.bold())
+                    ProgressView(value: Double(within), total: Double(max(1, completed.count))).tint(violet)
+                    Text("В пределах лимита: \(within) из \(completed.count) завершённых смен")
+                        .font(.caption).foregroundStyle(.secondary)
                     Text("Достижения").font(.title2.bold())
                     achievement("Первая смена", unlocked: completed.count >= 1, progress: completed.count, goal: 1)
                     achievement("Режим завода", unlocked: completed.count >= 10, progress: completed.count, goal: 10)
                     achievement("Дисциплина", unlocked: within >= 5, progress: within, goal: 5)
-                    Text("Достижения считаются по завершённым сменам выбранного месяца.").font(.caption).foregroundStyle(.secondary)
+                    Text("Статистика текущей смены пересчитывается по фактически прошедшему времени.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }.padding()
             }.navigationTitle("Статистика")
         }
@@ -130,6 +221,15 @@ struct StatsView: View {
     func stat(_ title: String, _ value: String, _ symbol: String) -> some View {
         HStack { Image(systemName: symbol).foregroundStyle(violet).frame(width: 32); Text(title); Spacer(); Text(value).bold() }
             .padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    func comparison(_ title: String, sessions: [WorkSession], color: Color) -> some View {
+        let seconds = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
+        let allowance = sessions.reduce(0.0) { $0 + Double($1.breakLimitMinutes * 60) }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack { Text(title); Spacer(); Text("\(sessions.count) смен · \(Int(seconds / 60)) мин") }
+                .font(.subheadline)
+            ProgressView(value: min(1, seconds / max(1, allowance))).tint(color)
+        }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
     func achievement(_ name: String, unlocked: Bool, progress: Int, goal: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -209,7 +309,7 @@ struct CalendarView: View {
                     ForEach(store.data.extras) { extra in
                         HStack {
                             Circle().fill(.orange).frame(width: 9, height: 9)
-                            Text(extra.start.formatted(date: .abbreviated, time: .shortened))
+                            Text(extra.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU"))))
                             Spacer()
                             Button(role: .destructive) { store.removeExtra(extra.id) } label: { Image(systemName: "trash") }
                         }.font(.subheadline)
@@ -238,7 +338,7 @@ struct HistoryView: View {
         NavigationStack {
             List(store.data.sessions.reversed()) { session in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(session.start.formatted(date: .abbreviated, time: .shortened)).font(.headline)
+                    Text(session.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU")))).font(.headline)
                     Text(session.end == nil ? "Смена продолжается" : "Завершена").foregroundStyle(.secondary)
                     Text("Работа: \(timeString(store.workSeconds(session))) · Перекуры: \(timeString(store.breakSeconds(session)))")
                         .font(.caption).monospacedDigit()
@@ -261,6 +361,13 @@ struct SettingsView: View {
                         ForEach([60, 90, 120, 150, 180, 210, 240], id: \.self) { Text("\($0) мин").tag($0) }
                     }
                     Text("Текущая смена сохраняет лимит, установленный при её запуске.").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Один перекур") {
+                    Picker("Минут на перекур", selection: Binding(get: { store.perBreakLimitMinutes }, set: { store.setPerBreakLimit($0) })) {
+                        ForEach([5, 10, 15, 20, 30], id: \.self) { Text("\($0) мин").tag($0) }
+                    }
+                    Text("По умолчанию 15 минут. Отдельно от общего лимита смены.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("График") {
                     Toggle("Автоматический учёт", isOn: Binding(get: { store.autoEnabled }, set: { store.setAuto($0) }))
@@ -289,6 +396,7 @@ struct ShiftRing: View {
     let remaining: Double
     let total: Double
     let subtitle: String
+    var compact: Bool = false
     var body: some View {
         ZStack {
             Circle().stroke(Color.purple.opacity(0.13), lineWidth: 15)
@@ -297,10 +405,13 @@ struct ShiftRing: View {
                 .rotationEffect(.degrees(-90)).animation(.easeInOut(duration: 0.5), value: Int(remaining))
             VStack(spacing: 9) {
                 Text(subtitle).font(.caption2.bold()).foregroundStyle(.secondary)
-                Text(timeString(remaining)).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                Text(remaining < 0 ? "+" + timeString(-remaining) : timeString(remaining))
+                    .font(.system(size: compact ? 28 : 34, weight: .bold, design: .rounded))
+                    .monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                    .foregroundStyle(remaining < 0 ? .orange : .primary)
                 Text("SHIFTLY · OPERATOR").font(.caption2.bold()).tracking(1.2).foregroundStyle(.purple)
             }.padding(20)
-        }.frame(width: 244, height: 244).padding(.vertical, 10)
+        }.frame(width: compact ? 158 : 244, height: compact ? 158 : 244).padding(.vertical, compact ? 0 : 10)
     }
 }
 
@@ -329,7 +440,7 @@ struct LineJournalView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("\(note.category) · \(note.stream)").bold()
                             Text(note.details)
-                            Text("\(note.date.formatted(date: .abbreviated, time: .shortened)) · \(note.durationMinutes) мин")
+                            Text("\(note.date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU")))) · \(note.durationMinutes) мин")
                                 .font(.caption).foregroundStyle(.secondary)
                             HStack {
                                 Button("Изменить") { editing = note }.font(.caption)
@@ -391,7 +502,7 @@ struct SessionEditor: View {
                             BreakEditor(sessionID: sessionID, item: item)
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(item.start.formatted(date: .abbreviated, time: .shortened))
+                                Text(item.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU"))))
                                 Text(item.end?.formatted(date: .omitted, time: .shortened) ?? "Идёт")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
@@ -456,14 +567,25 @@ struct BreakEditor: View {
     @State private var start = Date()
     @State private var end = Date()
     @State private var ready = false
+    @State private var errorMessage: String?
+    @State private var confirmDelete = false
     var body: some View {
         Form {
             DatePicker("Начало", selection: $start)
             DatePicker("Конец", selection: $end)
+            if let errorMessage { Text(errorMessage).foregroundStyle(.red).font(.caption) }
             Button("Сохранить") {
-                store.editBreak(sessionID: sessionID, breakID: item.id, start: start, end: end)
-                dismiss()
-            }.disabled(end <= start)
+                if let error = store.editBreak(sessionID: sessionID, breakID: item.id, start: start, end: end) {
+                    errorMessage = error
+                } else { dismiss() }
+            }.disabled(end <= start || end > Date())
+            Button("Удалить перекур", role: .destructive) { confirmDelete = true }
+                .confirmationDialog("Удалить эту запись?", isPresented: $confirmDelete) {
+                    Button("Удалить", role: .destructive) {
+                        store.removeBreak(sessionID: sessionID, breakID: item.id)
+                        dismiss()
+                    }
+                }
         }
         .navigationTitle("Исправить перекур")
         .onAppear { if !ready { start = item.start; end = item.end ?? Date(); ready = true } }
@@ -480,6 +602,15 @@ struct BackupControls: View {
         Button("Сохранить резервную копию JSON") { exportingJSON = true }
         Button("Экспорт CSV") { exportingCSV = true }
         Button("Восстановить из JSON") { importing = true }
+        if let latest = AutomaticBackups.latestFile() {
+            ShareLink(item: latest) {
+                Label("Сохранить автоматическую копию в Файлы", systemImage: "square.and.arrow.up")
+            }
+            Text("Автокопии: \(AutomaticBackups.snapshots().count) · хранятся на этом iPhone")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Text("Автосохранение выполняется после изменений, архив хранит до 20 снимков. Для сохранения при удалении приложения перенеси JSON в «Файлы» / iCloud Drive.")
+            .font(.caption).foregroundStyle(.secondary)
         if !message.isEmpty { Text(message).font(.caption) }
         Text("Восстановление заменяет текущие данные. Сохрани копию перед импортом.").font(.caption).foregroundStyle(.secondary)
         .fileExporter(isPresented: $exportingJSON, document: ShiftBackupDocument(data: store.data), contentType: .json, defaultFilename: "Shiftly-backup") { _ in }
