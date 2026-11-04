@@ -9,13 +9,9 @@ struct ShiftlyLiveBundle: WidgetBundle {
     var body: some Widget { ShiftlyLiveWidget() }
 }
 
-private func breakProgress(_ state: ShiftlyBreakAttributes.ContentState) -> Double {
-    min(1, max(0, state.usedSeconds / max(1, state.limitSeconds)))
-}
-
-private func remainingMinutes(until deadline: Date, at now: Date) -> Int {
-    max(0, Int(ceil(deadline.timeIntervalSince(now) / 60)))
-}
+// ActivityKit snapshots are not refreshed every minute in the background.
+// Use SwiftUI's system-managed timer Text and date-based ProgressView to
+// update the countdown on the Lock Screen and in all Dynamic Island regions.
 
 struct ShiftlyLiveWidget: Widget {
     var body: some WidgetConfiguration {
@@ -33,16 +29,25 @@ struct ShiftlyLiveWidget: Widget {
                         .font(.caption.bold()).foregroundStyle(.secondary)
                 }
                 HStack(alignment: .firstTextBaseline) {
-                    Text(timerInterval: context.attributes.startedAt...context.state.deadline, countsDown: true)
+                    Text(timerInterval: context.attributes.startedAt...context.state.deadline,
+                         countsDown: true, showsHours: false)
                         .font(.system(size: 31, weight: .bold, design: .rounded))
                         .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
                     Spacer(minLength: 0)
-                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                        Text("Всего: \(remainingMinutes(until: context.state.totalDeadline, at: timeline.date))м")
-                            .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 3) {
+                        Text("Всего:")
+                        Text(timerInterval: context.attributes.startedAt...context.state.totalDeadline,
+                             countsDown: true, showsHours: true)
+                            .monospacedDigit()
                     }
+                    .font(.caption).foregroundStyle(.secondary)
                 }
-                ProgressView(value: breakProgress(context.state)).tint(.purple)
+                ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
+                                 countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }.tint(.purple)
                 Button(intent: FinishBreakIntent()) {
                     Label("Вернулся к работе", systemImage: "checkmark.circle.fill")
                         .font(.subheadline.bold()).frame(maxWidth: .infinity)
@@ -59,25 +64,35 @@ struct ShiftlyLiveWidget: Widget {
                         .font(.subheadline)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                        Text("\(remainingMinutes(until: context.state.deadline, at: timeline.date))м")
-                            .font(.subheadline.bold().monospacedDigit())
-                            .lineLimit(1)
-                    }
+                    Text(timerInterval: context.attributes.startedAt...context.state.deadline,
+                         countsDown: true, showsHours: false)
+                        .font(.subheadline.bold().monospacedDigit())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(width: 60, alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(alignment: .center, spacing: 12) {
-                        Image("MascotIsland")
+                        // The large 1192px MascotIsland texture rendered as an
+                        // empty grey tile in the expanded island on iPhone.
+                        // IslandIconBreak is the small asset already verified
+                        // in compact mode, and is kept in this extension target.
+                        Image("IslandIconBreak")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 112, height: 95, alignment: .bottom)
+                            .frame(width: 64, height: 64)
                             .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Перекур · отдыхай 💜")
                                 .font(.caption)
                                 .lineLimit(2)
-                            ProgressView(value: breakProgress(context.state))
+                            ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
+                                         countsDown: true) {
+                                EmptyView()
+                            } currentValueLabel: {
+                                EmptyView()
+                            }
                                 .tint(.purple)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,14 +104,13 @@ struct ShiftlyLiveWidget: Widget {
                     .scaledToFit()
                     .frame(width: 24, height: 24)
             } compactTrailing: {
-                TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                    Text("\(remainingMinutes(until: context.state.deadline, at: timeline.date))м")
-                        .font(.caption2.bold())
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .frame(width: 48, alignment: .trailing)
+                Text(timerInterval: context.attributes.startedAt...context.state.deadline,
+                     countsDown: true, showsHours: false)
+                    .font(.caption2.bold().monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    // Fixed width avoids WidgetKit archiving/clipping the growing text.
+                    .frame(width: 54, alignment: .trailing)
             } minimal: {
                 Image("IslandIconBreak")
                     .resizable()

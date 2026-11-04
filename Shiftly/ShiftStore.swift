@@ -162,6 +162,53 @@ import WidgetKit
         return nil
     }
 
+    // The user is still on a break but forgot to press Start. Backdate the
+    // break, preserve its real start, and refresh the Live Activity countdown.
+    func startMissedBreak(sessionID: UUID, minutesAgo: Int) -> String? {
+        let now = Date()
+        let startedAt = now.addingTimeInterval(-Double(minutesAgo * 60))
+        guard minutesAgo >= 1 && minutesAgo <= 180 else { return "Укажи от 1 до 180 минут" }
+        guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }),
+              data.sessions[i].start <= now,
+              (data.sessions[i].end == nil || data.sessions[i].end! > now) else {
+            return "Выбранная смена уже завершена"
+        }
+        let session = data.sessions[i]
+        guard startedAt >= session.start else { return "Время раньше начала смены" }
+        guard !session.breaks.contains(where: { other in
+            let otherEnd = other.end ?? now
+            return startedAt < otherEnd && now > other.start
+        }) else { return "Перерыв пересекается с другим перекуром" }
+        let spentBefore = breakSeconds(session, now: startedAt)
+        let remainingAtStart = max(0, Double(session.breakLimitMinutes * 60) - spentBefore)
+        data.sessions[i].breaks.append(BreakSession(start: startedAt))
+        data.sessions[i].breaks.sort { $0.start < $1.start }
+        save()
+        BreakAlerts.requestPermission()
+        BreakAlerts.start(remainingSeconds: remainingAtStart,
+                          limitSeconds: Double(session.breakLimitMinutes * 60),
+                          singleBreakSeconds: Double(perBreakLimitMinutes * 60),
+                          breakStartedAt: startedAt)
+        return nil
+    }
+
+    // Next upcoming *new* shift. Handles the 8-day cycle and extra shifts,
+    // including 20:00–08:00 overnight dates.
+    func nextScheduledShift(after now: Date = Date()) -> (interval: DateInterval, extra: Bool)? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        var candidates: [(interval: DateInterval, extra: Bool)] = []
+        for offset in 0...32 {
+            guard let day = cal.date(byAdding: .day, value: offset, to: today),
+                  let interval = regularInterval(on: day), interval.start > now else { continue }
+            candidates.append((interval, false))
+        }
+        for extra in data.extras where extra.start > now {
+            candidates.append((DateInterval(start: extra.start, end: extra.end), true))
+        }
+        return candidates.min(by: { $0.interval.start < $1.interval.start })
+    }
+
     func replaceData(_ replacement: ShiftData) { data = replacement; save(); synchronize() }
 
     var isOnBreak: Bool { current?.breaks.last?.end == nil && current?.breaks.last != nil }

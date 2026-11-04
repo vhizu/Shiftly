@@ -23,6 +23,8 @@ struct MoreView: View {
             List {
                 NavigationLink { HistoryView() } label: { Label("История смен и перекуров", systemImage: "clock.arrow.circlepath") }
                 NavigationLink { LineJournalView() } label: { Label("Журнал оператора", systemImage: "wrench.and.screwdriver") }
+                NavigationLink { NextShiftView() } label: { Label("Следующая смена", systemImage: "calendar.badge.clock") }
+                NavigationLink { BreakHubView() } label: { Label("Центр перекуров", systemImage: "cup.and.saucer.fill") }
                 NavigationLink { SettingsView() } label: { Label("Настройки", systemImage: "gearshape") }
             }
             .navigationTitle("Ещё")
@@ -47,11 +49,16 @@ struct MascotPanel: View {
     let remainingSingle: TimeInterval
     var compact: Bool = false
     @State private var tapped = false
-    private var asset: String { mode == 2 && remainingSingle > 300 ? "MascotBreak" : mode > 0 ? "MascotWork" : "MascotDone" }
+    private var asset: String {
+        if mode == 0 { return "MascotDone" }
+        if mode == 2 && remainingSingle > 120 { return "MascotBreak" }
+        return "MascotWork"
+    }
     private var stage: String {
         guard mode == 2 else { return mode == 1 ? "Рабочий настрой" : "Сладких снов" }
         if remainingSingle <= 0 { return "Время вышло!" }
         if remainingSingle <= 60 { return "Осталась минута" }
+        if remainingSingle <= 120 { return "Пора возвращаться" }
         if remainingSingle <= 300 { return "Скоро обратно" }
         return "Кофейная пауза"
     }
@@ -59,6 +66,7 @@ struct MascotPanel: View {
         if tapped { return mode == 2 ? "Я слежу за твоими 15 минутами 💜" : mode == 1 ? "Держим темп, оператор!" : "Ты заслужил отдых 💜" }
         if mode == 2 && remainingSingle <= 0 { return "Эй, пора заканчивать перекур! ⏰" }
         if mode == 2 && remainingSingle <= 60 { return "Осталась минута! ☕" }
+        if mode == 2 && remainingSingle <= 120 { return "Эй, допивай кофе — две минуты! 💜" }
         if mode == 2 && remainingSingle <= 300 { return "Допивай кофе, скоро работать 💜" }
         return mode == 2 ? "Наконец-то перерыв ☕" : mode == 1 ? "Смена в деле!" : "До следующей смены отдыхаем"
     }
@@ -88,6 +96,9 @@ struct MascotPanel: View {
 struct HomeView: View {
     @EnvironmentObject var store: ShiftStore
     @AppStorage("shiftly.compactHome") private var compact = false
+    @AppStorage("shiftly.neonNight") private var neonNight = true
+    @State private var showBreakHub = false
+    @State private var showNextShift = false
     var body: some View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -102,6 +113,18 @@ struct HomeView: View {
                                     .font(.caption)
                             }
                         }
+                        HStack(spacing: 10) {
+                            Button { showBreakHub = true } label: {
+                                Label("Забытый перекур", systemImage: "plus.circle.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button { showNextShift = true } label: {
+                                Image(systemName: "calendar.badge.clock")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("Следующая смена")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         let active = store.current?.breaks.last(where: { $0.end == nil })
                         let singleRemaining = active.map { Double(store.perBreakLimitMinutes * 60) - now.timeIntervalSince($0.start) } ?? Double(store.perBreakLimitMinutes * 60)
                         MascotPanel(mode: store.current == nil ? 0 : store.isOnBreak ? 2 : 1,
@@ -135,7 +158,9 @@ struct HomeView: View {
                                         .tint(totalRemaining < 300 ? .orange : violet)
                                     Text("До конца смены: \(timeString(timeToEnd)) · отдых: \(timeString(max(0, totalRemaining)))")
                                         .font(.caption).foregroundStyle(.secondary)
-                                    Text("Прогноз: хватит ещё на \(Int(max(0, totalRemaining) / Double(max(1, store.perBreakLimitMinutes * 60)))) полных перекуров")
+                                    Text(RestForecast.message(remaining: totalRemaining,
+                                        minutesPerBreak: store.perBreakLimitMinutes,
+                                        untilShiftEnd: timeToEnd, active: store.isOnBreak))
                                         .font(.caption).foregroundStyle(.secondary)
                                     if store.isOnBreak && singleRemaining < 0 {
                                         Text("Перекур превышен на \(timeString(-singleRemaining))")
@@ -156,17 +181,46 @@ struct HomeView: View {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             }
                             .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                            HStack(spacing: 10) {
+                                Button { showBreakHub = true } label: {
+                                    Label("Центр перекуров", systemImage: "cup.and.saucer.fill")
+                                }
+                                .buttonStyle(.bordered)
+                                Button { showNextShift = true } label: {
+                                    Label("Следующая", systemImage: "calendar.badge.clock")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            Button("Забытый перекур +", systemImage: "clock.badge.plus") {
+                                showBreakHub = true
+                            }
+                            .buttonStyle(.bordered)
                             Button("Завершить смену", role: .destructive) { store.endWork() }
                         } else {
                             Text("Сейчас выходной").font(.title2.bold())
                             Text("Смены автоматически запускаются по графику. Внеплановую можно начать вручную.")
                                 .foregroundStyle(.secondary)
+                            Button("Посмотреть следующую смену") { showNextShift = true }
+                                .buttonStyle(.bordered)
+                            if let completed = store.data.sessions.last(where: { $0.end != nil && Date().timeIntervalSince($0.end!) < 48 * 3600 }) {
+                                NavigationLink { ShiftReportView(sessionID: completed.id) } label: {
+                                    Label("Итоги прошлой смены", systemImage: "chart.bar.doc.horizontal")
+                                }
+                            }
                             Button("Начать смену") { store.startWork() }
                                 .buttonStyle(.borderedProminent).controlSize(.large)
                         }
                     }.padding()
                 }
-            }.navigationTitle("Shiftly")
+                .background {
+                    if neonNight && (store.current.map { Calendar.current.component(.hour, from: $0.start) >= 14 } ?? false) {
+                        NeonNightBackground()
+                    }
+                }
+            }
+            .navigationTitle("Shiftly")
+            .sheet(isPresented: $showBreakHub) { BreakHubView() }
+            .sheet(isPresented: $showNextShift) { NextShiftView() }
         }
     }
     func metric(_ title: String, _ value: String) -> some View {
@@ -253,6 +307,16 @@ struct PayrollView: View {
                     LabeledContent("Учтено рабочих часов", value: String(format: "%.1f", result.normalHours))
                     LabeledContent("Из них ночных (22–06)", value: String(format: "%.1f", result.nightHours))
                     LabeledContent("Доп. смены без записи", value: String(format: "%.1f", result.overtimeHours))
+                }
+                Section("Прогноз до конца месяца") {
+                    let forecast = PayrollProjection.calculate(store: store, settings: pay, month: month)
+                    Text(forecast.total, format: .currency(code: "RUB"))
+                        .font(.title2.bold()).foregroundStyle(violet)
+                    LabeledContent("По текущим данным", value: result.estimated.formatted(.currency(code: "RUB")))
+                    LabeledContent("По оставшимся сменам", value: forecast.future.formatted(.currency(code: "RUB")))
+                    LabeledContent("Осталось смен по графику", value: "\(forecast.upcomingShifts)")
+                    Text("Оценка по заданным ставкам. Будущие смены считаются по 12 часов без вычета будущих перерывов; налоги, условия премий и доплаты предприятия не учитываются.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Твои ставки") {
                     HStack { Text("₽ за час"); Spacer(); TextField("0", value: $pay.hourlyRate, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 110) }
@@ -343,7 +407,11 @@ struct HistoryView: View {
                     Text("Работа: \(timeString(store.workSeconds(session))) · Перекуры: \(timeString(store.breakSeconds(session)))")
                         .font(.caption).monospacedDigit()
                     Text("Лимит: \(session.breakLimitMinutes) мин · Перекуров: \(session.breaks.count)").font(.caption).foregroundStyle(.secondary)
-                    NavigationLink("Исправить смену и перекуры") { SessionEditor(sessionID: session.id) }.font(.caption)
+                    HStack {
+                        NavigationLink("Исправить") { SessionEditor(sessionID: session.id) }.font(.caption)
+                        Spacer()
+                        NavigationLink("Отчёт смены") { ShiftReportView(sessionID: session.id) }.font(.caption)
+                    }
                 }.padding(.vertical, 4)
             }.navigationTitle("История").overlay { if store.data.sessions.isEmpty { ContentUnavailableView("История пуста", systemImage: "clock") } }
         }
@@ -375,6 +443,13 @@ struct SettingsView: View {
                     Button("Разрешить уведомления") { BreakAlerts.requestPermission() }
                     Text("2 дня → выходной → 2 ночи → 3 выходных")
                     Text("Опорная дата: 4 ноября 2026 — первая ночь").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Оформление") {
+                    Toggle("Фиолетовый неон на ночной смене",
+                        isOn: Binding(get: { UserDefaults.standard.object(forKey: "shiftly.neonNight") as? Bool ?? true },
+                                      set: { UserDefaults.standard.set($0, forKey: "shiftly.neonNight") }))
+                    Text("Режим включается на ночных сменах. Удобную компактную панель можно выбрать на главной.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Dynamic Island · диагностика") {
                     Text("Разрешены системой: \(live.enabled ? "да" : "нет")")
