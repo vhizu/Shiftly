@@ -2,14 +2,7 @@ import Foundation
 import UserNotifications
 import ActivityKit
 
-struct ShiftlyBreakAttributes: ActivityAttributes {
-    struct ContentState: Codable, Hashable {
-        var deadline: Date
-        var limitSeconds: Double
-        var usedSeconds: Double
-    }
-    var startedAt: Date
-}
+
 
 @MainActor
 final class LiveDiagnostics: ObservableObject {
@@ -26,8 +19,9 @@ enum BreakAlerts {
     static func start(remainingSeconds: TimeInterval, limitSeconds: TimeInterval) {
         let seconds = max(0, remainingSeconds)
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [prefix + "15", prefix + "5", prefix + "0"])
+        center.removePendingNotificationRequests(withIdentifiers: [prefix + "30", prefix + "15", prefix + "5", prefix + "0", prefix + "forgot"])
         for (minutes, title, message) in [
+            (30, "Shiftly: осталось 30 минут", "Проверь остаток лимита отдыха"),
             (15, "Shiftly: осталось 15 минут", "Лимит перерывов скоро закончится"),
             (5, "Shiftly: осталось 5 минут", "Пора заканчивать перекур"),
             (0, "Shiftly: лимит исчерпан", "Время перерывов на эту смену закончилось")
@@ -41,6 +35,12 @@ enum BreakAlerts {
             center.add(UNNotificationRequest(identifier: prefix + String(minutes), content: content,
                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)))
         }
+        let forgotten = UNMutableNotificationContent()
+        forgotten.title = "Shiftly ☕ · Ты ещё на перекуре?"
+        forgotten.body = "Если уже работаешь, заверши перерыв в приложении."
+        forgotten.sound = .default
+        center.add(UNNotificationRequest(identifier: prefix + "forgot", content: forgotten,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 45 * 60, repeats: false)))
         Task { @MainActor in
             // Stop old activities BEFORE starting the new one, avoiding the previous start/stop race.
             for activity in Activity<ShiftlyBreakAttributes>.activities {
@@ -64,7 +64,7 @@ enum BreakAlerts {
         }
     }
     static func stop() {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [prefix + "15", prefix + "5", prefix + "0"])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [prefix + "30", prefix + "15", prefix + "5", prefix + "0", prefix + "forgot"])
         Task { @MainActor in
             for activity in Activity<ShiftlyBreakAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)

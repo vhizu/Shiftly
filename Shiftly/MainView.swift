@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 private let violet = Color(red: 0.70, green: 0.43, blue: 0.98)
 
@@ -11,6 +13,7 @@ struct MainView: View {
             CalendarView().tabItem { Label("График", systemImage: "calendar") }
             PayrollView().tabItem { Label("Зарплата", systemImage: "rublesign.circle") }
             HistoryView().tabItem { Label("История", systemImage: "clock.arrow.circlepath") }
+            LineJournalView().tabItem { Label("Журнал", systemImage: "wrench.and.screwdriver") }
             SettingsView().tabItem { Label("Настройки", systemImage: "gearshape") }
         }
     }
@@ -58,23 +61,28 @@ struct HomeView: View {
                             VStack(spacing: 10) {
                                 Label(store.isOnBreak ? "Перерыв" : "Смена идёт", systemImage: store.isOnBreak ? "cup.and.saucer.fill" : "briefcase.fill")
                                     .font(.headline).foregroundStyle(violet)
-                                Text(timeString(store.isOnBreak ? max(0, remaining) : max(0, 12*3600 - now.timeIntervalSince(s.start))))
-                                    .font(.system(size: 40, weight: .bold, design: .rounded)).monospacedDigit()
+                                ShiftRing(remaining: store.isOnBreak ? max(0, remaining) : max(0, (s.end ?? s.start.addingTimeInterval(43200)).timeIntervalSince(now)),
+                                          total: store.isOnBreak ? Double(s.breakLimitMinutes * 60) : 43200,
+                                          subtitle: store.isOnBreak ? "ОСТАЛОСЬ ОТДЫХА" : "ДО КОНЦА СМЕНЫ")
                                 Text(store.isOnBreak ? "Осталось из лимита перерывов" : "Осталось до 12 часов с начала смены")
                                     .font(.caption).foregroundStyle(.secondary)
                                 ProgressView(value: min(1, spent / Double(max(1, s.breakLimitMinutes * 60)))).tint(violet)
+                                if store.isOnBreak {
+                                    Text("Прогноз: \(Int(max(0, remaining) / 60)) мин на оставшуюся часть смены")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                                 HStack {
                                     metric("Работа", timeString(store.workSeconds(s, now: now)))
                                     metric("Перерывы", timeString(spent))
                                 }
                                 if remaining < 0 { Text("Лимит превышен на " + timeString(-remaining)).foregroundStyle(.red).font(.caption) }
                             }.padding(16).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                            Button(store.isOnBreak ? "Вернуться к работе" : "Начать перерыв") { store.toggleBreak() }
+                            Button(store.isOnBreak ? "Вернуться к работе" : "Начать перерыв") { store.toggleBreak(); UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                                 .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
                             Button("Завершить смену", role: .destructive) { store.endWork() }.padding(.top, 4)
                         } else {
-                            Text("Смена не запущена").font(.title2.bold())
-                            Text("Запускай учёт вручную в начале работы").foregroundStyle(.secondary)
+                            Text("Смена сейчас не идёт").font(.title2.bold())
+                            Text("По графику учёт включается автоматически. Можно начать внеплановую смену вручную.").foregroundStyle(.secondary)
                             Button("Начать смену") { store.startWork() }.buttonStyle(.borderedProminent).controlSize(.large)
                         }
                     }.padding()
@@ -233,6 +241,7 @@ struct HistoryView: View {
                     Text("Работа: \(timeString(store.workSeconds(session))) · Перекуры: \(timeString(store.breakSeconds(session)))")
                         .font(.caption).monospacedDigit()
                     Text("Лимит: \(session.breakLimitMinutes) мин · Перекуров: \(session.breaks.count)").font(.caption).foregroundStyle(.secondary)
+                    NavigationLink("Исправить смену и перекуры") { SessionEditor(sessionID: session.id) }.font(.caption)
                 }.padding(.vertical, 4)
             }.navigationTitle("История").overlay { if store.data.sessions.isEmpty { ContentUnavailableView("История пуста", systemImage: "clock") } }
         }
@@ -252,6 +261,9 @@ struct SettingsView: View {
                     Text("Текущая смена сохраняет лимит, установленный при её запуске.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("График") {
+                    Toggle("Автоматический учёт", isOn: Binding(get: { store.autoEnabled }, set: { store.setAuto($0) }))
+                    Toggle("Напоминания за 1 час и 15 минут", isOn: Binding(get: { store.data.remindEnabled ?? true }, set: { store.setReminders($0) }))
+                    Button("Разрешить уведомления") { BreakAlerts.requestPermission() }
                     Text("2 дня → выходной → 2 ночи → 3 выходных")
                     Text("Опорная дата: 4 ноября 2026 — первая ночь").font(.caption).foregroundStyle(.secondary)
                 }
@@ -260,12 +272,181 @@ struct SettingsView: View {
                     Text(live.status).font(.caption).textSelection(.enabled)
                     Text("Запусти смену и перекур, затем проверь этот статус.").font(.caption).foregroundStyle(.secondary)
                 }
+                Section("Экспорт и восстановление") { BackupControls() }
                 Section("О приложении") {
                     Text("Shiftly \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") · сборка \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")")
                     Text("Версия IPA: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
                     Text("Данные хранятся локально на устройстве.").font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("Настройки")
+        }
+    }
+}
+
+struct ShiftRing: View {
+    let remaining: Double
+    let total: Double
+    let subtitle: String
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.purple.opacity(0.13), lineWidth: 15)
+            Circle().trim(from: 0, to: CGFloat(min(1, max(0, remaining / max(1,total)))))
+                .stroke(AngularGradient(colors: [.purple, .pink, .purple], center: .center), style: StrokeStyle(lineWidth: 15, lineCap: .round))
+                .rotationEffect(.degrees(-90)).animation(.easeInOut(duration: 0.5), value: Int(remaining))
+            VStack(spacing: 9) {
+                Text(subtitle).font(.caption2.bold()).foregroundStyle(.secondary)
+                Text(timeString(remaining)).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                Text("Shiftly 💜").font(.caption).foregroundStyle(.purple)
+            }.padding(20)
+        }.frame(width: 244, height: 244).padding(.vertical, 10)
+    }
+}
+
+struct LineJournalView: View {
+    @EnvironmentObject var store: ShiftStore
+    @State private var stream = "910"
+    @State private var category = "Заметка"
+    @State private var details = ""
+    @State private var duration = 0
+    @State private var editing: LineNote?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Новая запись") {
+                    Picker("Ручей", selection: $stream) { ForEach(["910","911","912","Другой"], id: \.self) { Text($0) } }
+                    Picker("Событие", selection: $category) { ForEach(["Заметка","Остановка","Ремонт","Переналадка","Замена рулона","Запуск"], id: \.self) { Text($0) } }
+                    TextField("Что произошло?", text: $details, axis: .vertical).lineLimit(2...5)
+                    Stepper("Простой: \(duration) мин", value: $duration, in: 0...720, step: 1)
+                    Button("Добавить запись") {
+                        store.addNote(LineNote(date: Date(), stream: stream, category: category, details: details, durationMinutes: duration))
+                        details = ""; duration = 0
+                    }.disabled(details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                Section("Записи") {
+                    ForEach(store.notes.sorted { $0.date > $1.date }) { note in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("\(note.category) · \(note.stream)").bold()
+                            Text(note.details)
+                            Text("\(note.date.formatted(date: .abbreviated, time: .shortened)) · \(note.durationMinutes) мин")
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Изменить") { editing = note }.font(.caption)
+                                Button("Удалить", role: .destructive) { store.removeNote(note.id) }.font(.caption)
+                            }
+                        }
+                    }
+                }
+            }.navigationTitle("Журнал линии")
+            .sheet(item: $editing) { note in NoteEditor(note: note) }
+        }
+    }
+}
+
+struct NoteEditor: View {
+    @EnvironmentObject var store: ShiftStore
+    @Environment(\.dismiss) private var dismiss
+    @State var note: LineNote
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Время", selection: $note.date)
+                TextField("Ручей", text: $note.stream)
+                TextField("Событие", text: $note.category)
+                TextField("Описание", text: $note.details, axis: .vertical)
+                Stepper("Простой: \(note.durationMinutes) мин", value: $note.durationMinutes, in: 0...720)
+            }
+            .navigationTitle("Редактирование")
+            .toolbar { Button("Сохранить") { store.updateNote(note); dismiss() } }
+        }
+    }
+}
+
+struct SessionEditor: View {
+    @EnvironmentObject var store: ShiftStore
+    let sessionID: UUID
+    @State private var start = Date()
+    @State private var end = Date()
+    @State private var hasEnd = true
+    @State private var ready = false
+    var body: some View {
+        Form {
+            if let session = store.data.sessions.first(where: { $0.id == sessionID }) {
+                Section("Смена") {
+                    DatePicker("Начало", selection: $start)
+                    Toggle("Завершена", isOn: $hasEnd)
+                    if hasEnd { DatePicker("Конец", selection: $end) }
+                    Button("Сохранить смену") {
+                        store.editSession(sessionID, start: start, end: hasEnd ? end : nil)
+                    }.disabled(hasEnd && end <= start)
+                }
+                Section("Перекуры") {
+                    ForEach(session.breaks) { item in
+                        NavigationLink {
+                            BreakEditor(sessionID: sessionID, item: item)
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(item.start.formatted(date: .abbreviated, time: .shortened))
+                                Text(item.end?.formatted(date: .omitted, time: .shortened) ?? "Идёт")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Корректировка")
+        .onAppear {
+            guard !ready, let session = store.data.sessions.first(where: { $0.id == sessionID }) else { return }
+            start = session.start; end = session.end ?? Date(); hasEnd = session.end != nil; ready = true
+        }
+    }
+}
+
+struct BreakEditor: View {
+    @EnvironmentObject var store: ShiftStore
+    @Environment(\.dismiss) private var dismiss
+    let sessionID: UUID
+    let item: BreakSession
+    @State private var start = Date()
+    @State private var end = Date()
+    @State private var ready = false
+    var body: some View {
+        Form {
+            DatePicker("Начало", selection: $start)
+            DatePicker("Конец", selection: $end)
+            Button("Сохранить") {
+                store.editBreak(sessionID: sessionID, breakID: item.id, start: start, end: end)
+                dismiss()
+            }.disabled(end <= start)
+        }
+        .navigationTitle("Исправить перекур")
+        .onAppear { if !ready { start = item.start; end = item.end ?? Date(); ready = true } }
+    }
+}
+
+struct BackupControls: View {
+    @EnvironmentObject var store: ShiftStore
+    @State private var exportingJSON = false
+    @State private var exportingCSV = false
+    @State private var importing = false
+    @State private var message = ""
+    var body: some View {
+        Button("Сохранить резервную копию JSON") { exportingJSON = true }
+        Button("Экспорт CSV") { exportingCSV = true }
+        Button("Восстановить из JSON") { importing = true }
+        if !message.isEmpty { Text(message).font(.caption) }
+        Text("Восстановление заменяет текущие данные. Сохрани копию перед импортом.").font(.caption).foregroundStyle(.secondary)
+        .fileExporter(isPresented: $exportingJSON, document: ShiftBackupDocument(data: store.data), contentType: .json, defaultFilename: "Shiftly-backup") { _ in }
+        .fileExporter(isPresented: $exportingCSV, document: ShiftCSVDocument(data: store.data), contentType: .commaSeparatedText, defaultFilename: "Shiftly-export") { _ in }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            do {
+                let url = try result.get()
+                guard url.startAccessingSecurityScopedResource() else { message = "Нет доступа к файлу"; return }
+                defer { url.stopAccessingSecurityScopedResource() }
+                let data = try JSONDecoder().decode(ShiftData.self, from: Data(contentsOf: url))
+                store.replaceData(data)
+                message = "Данные восстановлены"
+            } catch { message = "Ошибка импорта: \(error.localizedDescription)" }
         }
     }
 }

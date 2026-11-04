@@ -1,44 +1,93 @@
 import Foundation
 import UserNotifications
 import ActivityKit
+import WidgetKit
 
-struct WorkSession: Codable, Identifiable {
-    var id = UUID()
-    var start: Date
-    var end: Date?
-    var breaks: [BreakSession] = []
-    var breakLimitMinutes: Int
-}
-struct BreakSession: Codable, Identifiable {
-    var id = UUID()
-    var start: Date
-    var end: Date?
-    func seconds(asOf now: Date) -> TimeInterval { max(0, (end ?? now).timeIntervalSince(start)) }
-}
-struct ExtraShift: Codable, Identifiable {
-    var id = UUID()
-    var start: Date
-    var isNight: Bool
-    var end: Date { start.addingTimeInterval(12 * 3600) }
-}
-struct ShiftData: Codable {
-    var limitMinutes = 120
-    var sessions: [WorkSession] = []
-    var extras: [ExtraShift] = []
-}
 @MainActor final class ShiftStore: ObservableObject {
     @Published private(set) var data = ShiftData()
-    private let key = "shiftly.v1.data"
+    private let key = ShiftlyShared.dataKey
     init() {
         if let raw = UserDefaults.standard.data(forKey: key), let decoded = try? JSONDecoder().decode(ShiftData.self, from: raw) { data = decoded }
+        if let shared = ShiftlyShared.defaults.data(forKey: key), let decoded = try? JSONDecoder().decode(ShiftData.self, from: shared) {
+            if decoded.sessions.count >= data.sessions.count { data = decoded }
+        }
+        synchronize()
+        ShiftReminders.schedule(store: self)
     }
-    var current: WorkSession? { data.sessions.last(where: { $0.end == nil }) }
+    var current: WorkSession? {
+        let now = Date()
+        return data.sessions.last(where: { $0.start <= now && ($0.end == nil || $0.end! > now) })
+    }
+    var notes: [LineNote] { data.notes ?? [] }
+    var autoEnabled: Bool { data.autoEnabled ?? true }
+    func setAuto(_ enabled: Bool) { data.autoEnabled = enabled; save(); synchronize() }
+    func setReminders(_ enabled: Bool) { data.remindEnabled = enabled; save(); ShiftReminders.schedule(store: self) }
+    func addNote(_ note: LineNote) { if data.notes == nil { data.notes = [] }; data.notes!.append(note); save() }
+    func removeNote(_ id: UUID) { data.notes?.removeAll { $0.id == id }; save() }
+    func synchronize(now: Date = Date()) {
+        applyExternalBreakEnd()
+        guard autoEnabled else { return }
+        let cal = Calendar.current
+        // Synchronize a bounded window, including overnight shifts and extra shifts.
+        for offset in -14...1 {
+            guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: now)) else { continue }
+            if let interval = regularInterval(on: day) { ensureSession(start: interval.start, end: interval.end, now: now) }
+        }
+        for extra in data.extras { ensureSession(start: extra.start, end: extra.end, now: now) }
+    }
+    private func applyExternalBreakEnd() {
+        let defaults = ShiftlyShared.defaults
+        let stamp = defaults.double(forKey: ShiftlyShared.finishRequestKey)
+        guard stamp > 0 else { return }
+        defaults.removeObject(forKey: ShiftlyShared.finishRequestKey)
+        let finishedAt = Date(timeIntervalSince1970: stamp)
+        if let i = data.sessions.lastIndex(where: { $0.start <= finishedAt && ($0.end == nil || $0.end! > finishedAt) }),
+           let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) {
+            data.sessions[i].breaks[j].end = finishedAt
+            save()
+            BreakAlerts.stop()
+        }
+    }
+    private func ensureSession(start: Date, end: Date, now: Date) {
+        guard start <= now else { return }
+        if let i = data.sessions.firstIndex(where: { abs($0.start.timeIntervalSince(start)) < 60 }) {
+            if data.sessions[i].isAutomatic == true && data.sessions[i].end != (now >= end ? end : nil) {
+                data.sessions[i].end = now >= end ? end : nil
+                save()
+            }
+            return
+        }
+        data.sessions.append(WorkSession(start: start, end: now >= end ? end : nil, breakLimitMinutes: data.limitMinutes, isAutomatic: true))
+        data.sessions.sort { $0.start < $1.start }
+        save()
+    }
+    func editSession(_ id: UUID, start: Date, end: Date?) {
+        guard let i = data.sessions.firstIndex(where: { $0.id == id }), end == nil || end! > start else { return }
+        data.sessions[i].start = start
+        data.sessions[i].end = end
+        data.sessions[i].isAutomatic = false
+        save()
+    }
+    func removeSession(_ id: UUID) { data.sessions.removeAll { $0.id == id }; save() }
+    func updateNote(_ note: LineNote) {
+        guard let i = data.notes?.firstIndex(where: { $0.id == note.id }) else { return }
+        data.notes?[i] = note
+        save()
+    }
+    func editBreak(sessionID: UUID, breakID: UUID, start: Date, end: Date?) {
+        guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }), let j = data.sessions[i].breaks.firstIndex(where: { $0.id == breakID }) else { return }
+        data.sessions[i].breaks[j].start = start
+        data.sessions[i].breaks[j].end = end
+        save()
+    }
+    func replaceData(_ replacement: ShiftData) { data = replacement; save(); synchronize() }
+
     var isOnBreak: Bool { current?.breaks.last?.end == nil && current?.breaks.last != nil }
-    func breakSeconds(_ session: WorkSession, now: Date = Date()) -> TimeInterval { session.breaks.reduce(0) { $0 + $1.seconds(asOf: now) } }
+    func breakSeconds(_ session: WorkSession, now: Date = Date()) -> TimeInterval { session.breaks.reduce(0) { $0 + max(0, ( $1.end ?? min(now, session.end ?? now)).timeIntervalSince($1.start)) } }
     func workSeconds(_ session: WorkSession, now: Date = Date()) -> TimeInterval { max(0, (session.end ?? now).timeIntervalSince(session.start) - breakSeconds(session, now: now)) }
     func startWork() { guard current == nil else { return }; data.sessions.append(WorkSession(start: Date(), breakLimitMinutes: data.limitMinutes)); save(); BreakAlerts.requestPermission() }
-    func endWork() { guard let i = data.sessions.lastIndex(where: { $0.end == nil }) else { return }; let now = Date(); if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = now }; data.sessions[i].end = now; save(); BreakAlerts.stop() }
-    func toggleBreak() { guard let i = data.sessions.lastIndex(where: { $0.end == nil }) else { return }; if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = Date(); BreakAlerts.stop() } else { let now = Date(); let remaining = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: now)); data.sessions[i].breaks.append(BreakSession(start: now)); BreakAlerts.start(remainingSeconds: remaining, limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60)) }; save() }
+    func endWork() { guard let i = data.sessions.lastIndex(where: { $0.start <= Date() && ($0.end == nil || $0.end! > Date()) }) else { return }; data.sessions[i].isAutomatic = false; let now = Date(); if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = now }; data.sessions[i].end = now; save(); BreakAlerts.stop() }
+    func toggleBreak() { synchronize(); guard let i = data.sessions.lastIndex(where: { $0.start <= Date() && ($0.end == nil || $0.end! > Date()) }) else { return }; if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = Date(); BreakAlerts.stop() } else { let now = Date(); let remaining = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: now)); data.sessions[i].breaks.append(BreakSession(start: now)); BreakAlerts.start(remainingSeconds: remaining, limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60)) }; save() }
     func setLimit(_ minutes: Int) { data.limitMinutes = max(1, minutes); save() }
     func addExtra(_ date: Date, night: Bool) -> Bool {
         let cal = Calendar.current
@@ -50,9 +99,9 @@ struct ShiftData: Codable {
             guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: date)), let interval = regularInterval(on: day) else { continue }
             if proposed.intersects(interval) { return false }
         }
-        data.extras.append(ExtraShift(start: start, isNight: night)); data.extras.sort { $0.start < $1.start }; save(); return true
+        data.extras.append(ExtraShift(start: start, isNight: night)); data.extras.sort { $0.start < $1.start }; save(); synchronize(); ShiftReminders.schedule(store: self); return true
     }
-    func removeExtra(_ id: UUID) { data.extras.removeAll { $0.id == id }; save() }
+    func removeExtra(_ id: UUID) { data.extras.removeAll { $0.id == id }; save(); ShiftReminders.schedule(store: self) }
     // Nov 4, 2026 = cycle day 4 (first night). Cycle: D D O N N O O O.
     func cycleIndex(on date: Date) -> Int {
         let cal = Calendar.current
@@ -72,5 +121,12 @@ struct ShiftData: Codable {
     func dayLabel(_ date: Date) -> String {
         switch cycleIndex(on: date) { case 0,1: return "Д"; case 3,4: return "Н"; default: return "В" }
     }
-    private func save() { if let raw = try? JSONEncoder().encode(data) { UserDefaults.standard.set(raw, forKey: key) }; objectWillChange.send() }
+    private func save() {
+        if let raw = try? JSONEncoder().encode(data) {
+            UserDefaults.standard.set(raw, forKey: key)
+            ShiftlyShared.defaults.set(raw, forKey: key)
+        }
+        objectWillChange.send()
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }

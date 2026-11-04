@@ -2,14 +2,7 @@ import SwiftUI
 import WidgetKit
 import ActivityKit
 
-struct ShiftlyBreakAttributes: ActivityAttributes {
-    struct ContentState: Codable, Hashable {
-        var deadline: Date
-        var limitSeconds: Double
-        var usedSeconds: Double
-    }
-    var startedAt: Date
-}
+
 
 @main
 struct ShiftlyLiveBundle: WidgetBundle {
@@ -27,36 +20,24 @@ private func remainingMinutes(until deadline: Date, at now: Date) -> Int {
 struct ShiftlyLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ShiftlyBreakAttributes.self) { context in
-            HStack(alignment: .center, spacing: 12) {
-                Image("MascotLock")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 96, height: 112, alignment: .bottom)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Shiftly · Перерыв", systemImage: "timer")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.purple)
-
-                    Text(timerInterval: Date()...max(Date(), context.state.deadline),
-                         countsDown: true)
-                        .font(.title2.bold())
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-
-                    Text("Осталось от лимита смены")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    ProgressView(value: breakProgress(context.state))
-                        .tint(.purple)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Label("Shiftly · Перерыв", systemImage: "cup.and.saucer.fill")
+                        .font(.headline).foregroundStyle(.purple)
+                    Spacer()
+                    Text("\(Int(context.state.limitSeconds / 60)) мин лимит")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(timerInterval: Date()...max(Date(), context.state.deadline), countsDown: true)
+                    .font(.title.bold()).monospacedDigit()
+                ProgressView(value: breakProgress(context.state)).tint(.purple)
+                Button(intent: FinishBreakIntent()) {
+                    Label("Вернулся к работе", systemImage: "play.fill")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent).tint(.purple)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(14)
             .activityBackgroundTint(.black)
             .activitySystemActionForegroundColor(.purple)
         } dynamicIsland: { context in

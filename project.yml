@@ -10,20 +10,23 @@ targets:
   Shiftly:
     type: application
     platform: iOS
-    sources: [Shiftly]
+    sources: [Shiftly, Shared]
     dependencies:
       - target: ShiftlyLive
+        embed: true
+      - target: ShiftlyHomeWidget
         embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiftly.app
+        CODE_SIGN_ENTITLEMENTS: Shiftly/Shiftly.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         CODE_SIGNING_ALLOWED: NO
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
-        MARKETING_VERSION: '1.3.0'
-        CURRENT_PROJECT_VERSION: '6'
+        MARKETING_VERSION: '1.4.0'
+        CURRENT_PROJECT_VERSION: '8'
         INFOPLIST_KEY_CFBundleDisplayName: Shiftly
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
@@ -32,14 +35,32 @@ targets:
   ShiftlyLive:
     type: app-extension
     platform: iOS
-    sources: [ShiftlyLive]
+    sources: [ShiftlyLive, Shared]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiftly.app.live
-        MARKETING_VERSION: '1.3.0'
-        CURRENT_PROJECT_VERSION: '6'
+        CODE_SIGN_ENTITLEMENTS: ShiftlyLive/ShiftlyLive.entitlements
+        MARKETING_VERSION: '1.4.0'
+        CURRENT_PROJECT_VERSION: '8'
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: ShiftlyLive/Info.plist
         CODE_SIGNING_ALLOWED: NO
         SWIFT_VERSION: '5.0'
         IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+
+  ShiftlyHomeWidget:
+    type: app-extension
+    platform: iOS
+    sources: [ShiftlyHomeWidget, Shared/ShiftlyModels.swift]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shiftly.app.home
+        MARKETING_VERSION: '1.4.0'
+        CURRENT_PROJECT_VERSION: '8'
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_ENTITLEMENTS: ShiftlyHomeWidget/ShiftlyHomeWidget.entitlements
+        SWIFT_VERSION: '5.0'
+        IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ShiftlyHomeWidget/Info.plist
