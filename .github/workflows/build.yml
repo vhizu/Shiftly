@@ -105,7 +105,7 @@ jobs:
           vJhbyrIaZZp07UT8FGXqUKQtbWlLW9rSlra0pS1taUtb2tKWtrSlLW1pS1va0pa2tKUtbWlLW9r+
           ltr/AT9tOxEAeAAA
           SHIFTLY_SOURCE_END
-          base64 --decode /tmp/shiftly.tar.gz.b64 > /tmp/shiftly.tar.gz
+          base64 -D -i /tmp/shiftly.tar.gz.b64 -o /tmp/shiftly.tar.gz
           tar -xzf /tmp/shiftly.tar.gz
       - name: Install XcodeGen
         run: brew install xcodegen
