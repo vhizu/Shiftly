@@ -1,0 +1,127 @@
+name: Build Shiftly IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Restore embedded Shiftly sources
+        shell: bash
+        run: |
+          cat > /tmp/shiftly.tar.gz.b64 <<'SHIFTLY_SOURCE_END'
+          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
+          ltr/AT9tOxEAeAAA
+          SHIFTLY_SOURCE_END
+          base64 --decode /tmp/shiftly.tar.gz.b64 > /tmp/shiftly.tar.gz
+          tar -xzf /tmp/shiftly.tar.gz
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build unsigned app
+        run: |
+          xcodebuild -project Shiftly.xcodeproj -scheme Shiftly -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Shiftly.app Payload/
+          zip -qr Shiftly-unsigned.ipa Payload
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiftly-unsigned-IPA
+          path: Shiftly-unsigned.ipa
+          retention-days: 14
