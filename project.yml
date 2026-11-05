@@ -25,8 +25,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         CODE_SIGNING_ALLOWED: NO
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
-        MARKETING_VERSION: '1.8.0'
-        CURRENT_PROJECT_VERSION: '17'
+        MARKETING_VERSION: '1.9.0'
+        CURRENT_PROJECT_VERSION: '18'
         INFOPLIST_KEY_CFBundleDisplayName: Shiftly
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
@@ -40,8 +40,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiftly.app.live
         CODE_SIGN_ENTITLEMENTS: ShiftlyLive/ShiftlyLive.entitlements
-        MARKETING_VERSION: '1.8.0'
-        CURRENT_PROJECT_VERSION: '17'
+        MARKETING_VERSION: '1.9.0'
+        CURRENT_PROJECT_VERSION: '18'
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: ShiftlyLive/Info.plist
         CODE_SIGNING_ALLOWED: NO
@@ -55,8 +55,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shiftly.app.home
-        MARKETING_VERSION: '1.8.0'
-        CURRENT_PROJECT_VERSION: '17'
+        MARKETING_VERSION: '1.9.0'
+        CURRENT_PROJECT_VERSION: '18'
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGN_ENTITLEMENTS: ShiftlyHomeWidget/ShiftlyHomeWidget.entitlements
         SWIFT_VERSION: '5.0'

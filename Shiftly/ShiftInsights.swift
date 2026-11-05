@@ -55,7 +55,6 @@ struct BreakHubView: View {
     }
 
     var body: some View {
-        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 9) {
@@ -90,7 +89,7 @@ struct BreakHubView: View {
                         .shiftlyGlass(radius: 22)
 
                         Button { showPastEditor = true } label: {
-                            Label("+ Добавить забытый перекур", systemImage: "clock.badge.plus")
+                            Label("+ Добавить забытый перекур", systemImage: "clock.arrow.circlepath")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(ShiftlyPrimaryButtonStyle())
@@ -155,11 +154,9 @@ struct BreakHubView: View {
             .navigationTitle("Перекуры")
             .navigationBarTitleDisplayMode(.inline)
             .background(ShiftlyBackdrop())
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
             .sheet(isPresented: $showPastEditor) {
                 if let session = selectedSession { QuickPastBreakEditor(sessionID: session.id) }
             }
-        }
     }
 }
 
@@ -228,7 +225,6 @@ struct NextShiftView: View {
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     private var palette: ShiftlyPalette { ShiftlyPalette(rawValue: themeName) ?? .violet }
     var body: some View {
-        NavigationStack {
             TimelineView(.periodic(from: .now, by: 1)) { tick in
                 ScrollView {
                     VStack(spacing: 19) {
@@ -274,8 +270,6 @@ struct NextShiftView: View {
             .background(ShiftlyBackdrop())
             .navigationTitle("Следующая смена")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
-        }
     }
 }
 

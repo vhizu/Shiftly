@@ -2,126 +2,126 @@ import SwiftUI
 import WidgetKit
 import ActivityKit
 
-
-
 @main
 struct ShiftlyLiveBundle: WidgetBundle {
     var body: some Widget { ShiftlyLiveWidget() }
 }
 
-// ActivityKit snapshots are not refreshed every minute in the background.
-// Use SwiftUI's system-managed timer Text and date-based ProgressView to
-// update the countdown on the Lock Screen and in all Dynamic Island regions.
+// Live Activities are rendered by the system, not refreshed by app timers.
+// Time text and the progress bar use date intervals to tick while locked.
+private let islandViolet = Color(red: 0.81, green: 0.61, blue: 1)
+private let islandBlue = Color(red: 0.48, green: 0.73, blue: 1)
 
 struct ShiftlyLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ShiftlyBreakAttributes.self) { context in
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 10) {
+                HStack(spacing: 10) {
                     Image("IslandIconBreak")
-                        .resizable().scaledToFit().frame(width: 34, height: 34)
+                        .resizable().scaledToFit()
+                        .frame(width: 38, height: 38)
+                        .padding(3)
+                        .background(islandViolet.opacity(0.13), in: Circle())
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Shiftly · Перерыв").font(.headline).foregroundStyle(.purple)
-                        Text("До конца текущего перекура").font(.caption).foregroundStyle(.secondary)
+                        Text("Shiftly · Перекур")
+                            .font(.headline).foregroundStyle(.white)
+                        Text("До окончания текущего перекура")
+                            .font(.caption).foregroundStyle(Color.white.opacity(0.74))
                     }
                     Spacer(minLength: 0)
-                    Text("Лимит смены: \(Int(context.state.limitSeconds / 60)) мин")
-                        .font(.caption.bold()).foregroundStyle(.secondary)
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(islandViolet)
                 }
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(timerInterval: context.attributes.startedAt...context.state.deadline,
                          countsDown: true, showsHours: false)
-                        .font(.system(size: 31, weight: .bold, design: .rounded))
-                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                        .foregroundStyle(.white)
                     Spacer(minLength: 0)
-                    HStack(spacing: 3) {
-                        Text("Всего:")
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("ОСТАЛОСЬ ЗА СМЕНУ")
+                            .font(.system(size: 9, weight: .semibold)).tracking(0.5)
+                            .foregroundStyle(Color.white.opacity(0.74))
                         Text(timerInterval: context.attributes.startedAt...context.state.totalDeadline,
                              countsDown: true, showsHours: true)
-                            .monospacedDigit()
+                            .font(.caption.bold().monospacedDigit())
+                            .foregroundStyle(islandViolet)
                     }
-                    .font(.caption).foregroundStyle(.secondary)
                 }
                 ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
-                                 countsDown: true) {
-                    EmptyView()
-                } currentValueLabel: {
-                    EmptyView()
-                }.tint(.purple)
+                             countsDown: true) { EmptyView() } currentValueLabel: { EmptyView() }
+                    .tint(islandViolet)
                 Button(intent: FinishBreakIntent()) {
                     Label("Вернулся к работе", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.bold()).frame(maxWidth: .infinity)
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent).tint(.purple)
+                .buttonStyle(.borderedProminent)
+                .tint(Color(red: 0.70, green: 0.36, blue: 0.92))
             }
             .padding(14)
-            .activityBackgroundTint(Color(red: 0.06, green: 0.05, blue: 0.10))
-            .activitySystemActionForegroundColor(.purple)
+            .activityBackgroundTint(Color(red: 0.095, green: 0.075, blue: 0.16))
+            .activitySystemActionForegroundColor(islandViolet)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label("Перерыв", systemImage: "timer")
-                        .font(.subheadline)
+                    Label("Перекур", systemImage: "cup.and.saucer.fill")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(timerInterval: context.attributes.startedAt...context.state.deadline,
                          countsDown: true, showsHours: false)
                         .font(.subheadline.bold().monospacedDigit())
+                        .foregroundStyle(islandViolet)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .frame(width: 60, alignment: .trailing)
+                        .minimumScaleFactor(0.65)
+                        .frame(width: 62, alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(alignment: .center, spacing: 12) {
-                        // The large 1192px MascotIsland texture rendered as an
-                        // empty grey tile in the expanded island on iPhone.
-                        // IslandIconBreak is the small asset already verified
-                        // in compact mode, and is kept in this extension target.
+                    HStack(spacing: 12) {
+                        // Verified compact avatar, not the oversized mascot PNG
+                        // that previously displayed as a grey square.
                         Image("IslandIconBreak")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 58, height: 58)
-                            .padding(5)
-                            .background(Color.purple.opacity(0.11), in: Circle())
-                            .overlay(Circle().stroke(Color.purple.opacity(0.30), lineWidth: 1))
+                            .resizable().scaledToFit()
+                            .frame(width: 49, height: 49)
+                            .padding(4)
+                            .background(
+                                LinearGradient(colors: [islandViolet.opacity(0.27), islandBlue.opacity(0.10)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: Circle()
+                            )
+                            .overlay(Circle().stroke(islandViolet.opacity(0.48), lineWidth: 1))
                             .accessibilityHidden(true)
-
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Перекур · отдыхай 💜")
-                                .font(.caption.bold())
-                                .foregroundStyle(.purple)
-                                .lineLimit(2)
-                            ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
-                                         countsDown: true) {
-                                EmptyView()
-                            } currentValueLabel: {
-                                EmptyView()
+                            HStack(spacing: 5) {
+                                Text("Отдыхай 💜").foregroundStyle(.white)
+                                Spacer(minLength: 0)
+                                Text("SHIFTLY").foregroundStyle(islandViolet)
                             }
-                                .tint(.purple)
-                                .padding(5)
-                                .background(Color.purple.opacity(0.09), in: Capsule())
+                            .font(.caption.bold())
+                            ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
+                                         countsDown: true) { EmptyView() } currentValueLabel: { EmptyView() }
+                                .tint(islandViolet)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity)
                     }
+                    .padding(.vertical, 3)
                 }
             } compactLeading: {
                 Image("IslandIconBreak")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 24, height: 24)
+                    .resizable().scaledToFit().frame(width: 24, height: 24)
             } compactTrailing: {
                 Text(timerInterval: context.attributes.startedAt...context.state.deadline,
                      countsDown: true, showsHours: false)
                     .font(.caption2.bold().monospacedDigit())
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    // Fixed width avoids WidgetKit archiving/clipping the growing text.
+                    .foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.67)
                     .frame(width: 54, alignment: .trailing)
             } minimal: {
                 Image("IslandIconBreak")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 22, height: 22)
+                    .resizable().scaledToFit().frame(width: 22, height: 22)
             }
         }
     }

@@ -42,39 +42,35 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("SHIFTLY 1.8", systemImage: "sparkles")
-                            .font(.caption.bold()).tracking(2).foregroundStyle(accent)
-                        Text("Твоё пространство").font(.system(size: 31, weight: .bold, design: .rounded))
-                        Text("Всё для смен, отдыха и спокойной головы")
-                            .foregroundStyle(.secondary).font(.subheadline)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                    .shiftlyGlass(radius: 26, emphasis: true)
-
+                VStack(alignment: .leading, spacing: 11) {
+                    ShiftlySectionHeader(title: "Журнал и история")
                     NavigationLink { HistoryView() } label: {
-                        ShiftlyQuickTile(symbol: "clock.arrow.circlepath", title: "История", detail: "Перекуры и отчёты", accent: accent)
+                        ShiftlyMenuRow(symbol: "clock.arrow.circlepath", title: "История", subtitle: "Перекуры и отчёты", accent: accent)
                     }
                     NavigationLink { LineJournalView() } label: {
-                        ShiftlyQuickTile(symbol: "wrench.adjustable.fill", title: "Журнал линии", detail: "Записи оператора", accent: .orange)
+                        ShiftlyMenuRow(symbol: "wrench.adjustable.fill", title: "Журнал линии", subtitle: "Заметки оператора", accent: .orange)
                     }
-                    NavigationLink { NextShiftView() } label: {
-                        ShiftlyQuickTile(symbol: "calendar.badge.clock", title: "Следующая смена", detail: "План и отсчёт", accent: .cyan)
-                    }
+                    ShiftlySectionHeader(title: "Отдых")
+                        .padding(.top, 8)
                     NavigationLink { BreakHubView() } label: {
-                        ShiftlyQuickTile(symbol: "cup.and.saucer.fill", title: "Центр перекуров", detail: "Записи и лимиты", accent: .pink)
+                        ShiftlyMenuRow(symbol: "cup.and.saucer.fill", title: "Центр перекуров", subtitle: "Лимиты, исправления и история", accent: .pink)
                     }
+                    ShiftlySectionHeader(title: "Приложение")
+                        .padding(.top, 8)
                     NavigationLink { BackupCenterView() } label: {
-                        ShiftlyQuickTile(symbol: "externaldrive.fill.badge.timemachine", title: "Резервные копии", detail: "Экспорт и восстановление", accent: .green)
+                        ShiftlyMenuRow(symbol: "externaldrive.fill", title: "Резервные копии", subtitle: "Найти JSON и восстановить", accent: .green)
                     }
                     NavigationLink { SettingsView() } label: {
-                        ShiftlyQuickTile(symbol: "paintpalette.fill", title: "Настройки", detail: "Темы и параметры", accent: accent)
+                        ShiftlyMenuRow(symbol: "paintpalette.fill", title: "Настройки", subtitle: "Оформление и параметры", accent: accent)
                     }
+                    Text("Shiftly · Operator Edition")
+                        .font(.caption2).foregroundStyle(.white.opacity(0.52))
+                        .frame(maxWidth: .infinity).padding(.top, 12)
                 }
-                .padding(17)
+                .padding(16)
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.plain)
             .scrollIndicators(.hidden)
             .background(ShiftlyBackdrop())
             .navigationTitle("Ещё")
@@ -128,7 +124,7 @@ struct MascotPanel: View {
         return mode == 2 ? "Заслуженный перерыв ☕" : mode == 1 ? "Смена в деле!" : "Отдыхай, оператор 💜"
     }
     var body: some View {
-        let height: CGFloat = compact ? 116 : 225
+        let height: CGFloat = compact ? 104 : 160
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [accent.opacity(0.12), .clear, .black.opacity(0.13)], startPoint: .topLeading, endPoint: .bottomTrailing)
             Image(asset)
@@ -171,12 +167,9 @@ struct HomeView: View {
     @EnvironmentObject var store: ShiftStore
     @AppStorage("shiftly.compactHome") private var compact = false
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
-    @State private var showBreakHub = false
-    @State private var showNextShift = false
     @State private var showQuickPastBreak = false
     @State private var showFocus = false
-    @State private var showBackup = false
-    @State private var showReport = false
+    @State private var confirmEnd = false
     private var palette: ShiftlyPalette { ShiftlyPalette(rawValue: themeName) ?? .violet }
     private var recentSession: WorkSession? {
         store.current ?? store.data.sessions.max(by: { $0.start < $1.start })
@@ -186,165 +179,128 @@ struct HomeView: View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let now = context.date
-                let active = store.current?.breaks.last(where: { $0.end == nil })
+                let session = store.current
+                let active = session?.breaks.last(where: { $0.end == nil })
                 let singleRemaining = active.map { Double(store.perBreakLimitMinutes * 60) - now.timeIntervalSince($0.start) }
                     ?? Double(store.perBreakLimitMinutes * 60)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 15) {
-                        HStack(alignment: .center) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("ТВОЯ СМЕНА · SHIFTLY")
-                                    .font(.caption2.bold()).tracking(2).foregroundStyle(palette.accent)
-                                Text(store.current == nil ? "Время для себя" : store.isOnBreak ? "Отдыхай 💜" : "Всё под контролем")
-                                    .font(.system(size: compact ? 25 : 30, weight: .bold, design: .rounded))
-                                Text(ruDate(now)).font(.caption).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 13) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(session == nil ? "ВЫХОДНОЙ" : store.isOnBreak ? "ВРЕМЯ ОТДЫХА" : "ТВОЯ СМЕНА")
+                                    .font(.caption2.bold()).tracking(1.6).foregroundStyle(palette.accent)
+                                Text(session == nil ? "Отдыхай 💜" : store.isOnBreak ? "Перекур" : "Всё под контролем")
+                                    .font(.system(size: 27, weight: .bold, design: .rounded)).foregroundStyle(.white)
                             }
-                            Spacer(minLength: 5)
-                            Button { compact.toggle() } label: {
+                            Spacer()
+                            Button { withAnimation(.easeInOut(duration: 0.2)) { compact.toggle() } } label: {
                                 Image(systemName: compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
-                                    .font(.headline)
-                                    .frame(width: 46, height: 46)
-                                    .shiftlyGlass(radius: 15)
+                                    .font(.subheadline.bold()).foregroundStyle(.white)
+                                    .frame(width: 42, height: 42).shiftlyGlassControl(radius: 14)
                             }
-                            .accessibilityLabel(compact ? "Крупный интерфейс" : "Компактный интерфейс")
+                            .accessibilityLabel(compact ? "Расширенный интерфейс" : "Компактный интерфейс")
                         }
-                        MascotPanel(mode: store.current == nil ? 0 : store.isOnBreak ? 2 : 1,
+
+                        MascotPanel(mode: session == nil ? 0 : store.isOnBreak ? 2 : 1,
                                     remainingSingle: singleRemaining, compact: compact)
-                        if let session = store.current {
+
+                        if let session {
                             let spent = store.breakSeconds(session, now: now)
                             let totalRemaining = Double(session.breakLimitMinutes * 60) - spent
                             let untilEnd = max(0, (session.end ?? session.start.addingTimeInterval(12 * 3600)).timeIntervalSince(now))
-                            VStack(spacing: compact ? 12 : 17) {
+                            VStack(alignment: .leading, spacing: 13) {
                                 HStack {
-                                    Label(store.isOnBreak ? "Идёт перекур" : "Смена идёт", systemImage: store.isOnBreak ? "cup.and.saucer.fill" : "moon.stars.fill")
+                                    Label(store.isOnBreak ? "Перекур активен" : "Смена идёт", systemImage: store.isOnBreak ? "cup.and.saucer.fill" : "briefcase.fill")
                                         .font(.subheadline.bold()).foregroundStyle(palette.accent)
                                     Spacer()
-                                    Text("Начало " + ruDate(session.start))
-                                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+                                    Text("С " + ruDate(session.start)).font(.caption2)
+                                        .foregroundStyle(Color.white.opacity(0.76)).lineLimit(1).minimumScaleFactor(0.65)
                                 }
-                                ShiftRing(remaining: store.isOnBreak ? singleRemaining : untilEnd,
-                                          total: store.isOnBreak ? Double(store.perBreakLimitMinutes * 60) : 12 * 3600,
-                                          subtitle: store.isOnBreak ? "ТЕКУЩИЙ ПЕРЕКУР" : "ДО КОНЦА СМЕНЫ",
-                                          compact: compact)
-                                VStack(spacing: 9) {
-                                    HStack {
-                                        Text("ОБЩИЙ ЛИМИТ ОТДЫХА")
-                                            .font(.caption2.bold()).tracking(0.9).foregroundStyle(.secondary)
-                                        Spacer()
+                                HStack(spacing: 10) {
+                                    ShiftRing(remaining: store.isOnBreak ? singleRemaining : untilEnd,
+                                              total: store.isOnBreak ? Double(store.perBreakLimitMinutes * 60) : 12 * 3600,
+                                              subtitle: store.isOnBreak ? "ТЕКУЩИЙ ПЕРЕКУР" : "ДО КОНЦА СМЕНЫ", compact: true)
+                                        .frame(maxWidth: .infinity)
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text("ОСТАТОК ОТДЫХА").font(.caption2.bold()).tracking(0.8)
+                                            .foregroundStyle(Color.white.opacity(0.75))
                                         Text(timeString(max(0, totalRemaining)))
-                                            .font(.system(.subheadline, design: .rounded, weight: .bold)).monospacedDigit()
+                                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.white).monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
+                                        ProgressView(value: min(1, max(0, totalRemaining / Double(max(1, session.breakLimitMinutes * 60)))))
+                                            .tint(totalRemaining < 300 ? .orange : palette.accent)
+                                        Text("До конца смены: " + timeString(untilEnd))
+                                            .font(.caption).foregroundStyle(Color.white.opacity(0.76))
                                     }
-                                    ProgressView(value: min(1, max(0, totalRemaining / Double(max(1, session.breakLimitMinutes * 60)))))
-                                        .tint(totalRemaining < 300 ? .orange : palette.accent)
-                                    Text(RestForecast.message(remaining: totalRemaining,
-                                        minutesPerBreak: store.perBreakLimitMinutes, untilShiftEnd: untilEnd,
-                                        active: store.isOnBreak))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                HStack(spacing: 11) {
+                                HStack(spacing: 10) {
                                     ShiftlyStatChip(symbol: "briefcase.fill", title: "Работа", value: timeString(store.workSeconds(session, now: now)))
                                     ShiftlyStatChip(symbol: "cup.and.saucer.fill", title: "Отдых", value: timeString(spent))
                                 }
+                                Text(RestForecast.message(remaining: totalRemaining, minutesPerBreak: store.perBreakLimitMinutes,
+                                                          untilShiftEnd: untilEnd, active: store.isOnBreak))
+                                    .font(.caption).foregroundStyle(Color.white.opacity(0.76))
                                 if totalRemaining < 0 {
-                                    Label("Лимит превышен на " + timeString(-totalRemaining), systemImage: "exclamationmark.triangle.fill")
+                                    Label("Превышен лимит: " + timeString(-totalRemaining), systemImage: "exclamationmark.triangle.fill")
                                         .foregroundStyle(.orange).font(.caption.bold())
                                 }
                             }
-                            .padding(compact ? 14 : 18)
-                            .shiftlyGlass(radius: 27, emphasis: true)
+                            .padding(16)
+                            .shiftlyGlass(radius: 24, emphasis: true)
 
                             Button { store.toggleBreak(); UIImpactFeedbackGenerator(style: .medium).impactOccurred() } label: {
-                                Label(store.isOnBreak ? "Вернулся к работе" : "Начать перекур", systemImage: store.isOnBreak ? "checkmark.circle.fill" : "cup.and.saucer.fill")
+                                Label(store.isOnBreak ? "Вернулся к работе" : "Начать перекур",
+                                      systemImage: store.isOnBreak ? "checkmark.circle.fill" : "cup.and.saucer.fill")
                             }
                             .buttonStyle(ShiftlyPrimaryButtonStyle())
 
-                            HStack(spacing: 12) {
+                            HStack(spacing: 11) {
+                                Button { showQuickPastBreak = true } label: {
+                                    Label("Забытый перекур", systemImage: "clock.arrow.circlepath")
+                                        .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(12)
+                                        .shiftlyGlassControl(radius: 15)
+                                }
                                 Button { showFocus = true } label: {
-                                    Label("Фокус", systemImage: "circle.dotted.circle")
+                                    Label("Фокус", systemImage: "scope")
                                         .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(12)
-                                        .shiftlyGlass(radius: 17)
+                                        .shiftlyGlassControl(radius: 15)
                                 }
-                                Button { showReport = true } label: {
-                                    Label("Отчёт", systemImage: "chart.bar.doc.horizontal")
-                                        .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(12)
-                                        .shiftlyGlass(radius: 17)
-                                }
+                            }
+                            .foregroundStyle(.white)
+                            if !compact {
+                                Button("Завершить смену", role: .destructive) { confirmEnd = true }
+                                    .font(.caption).frame(maxWidth: .infinity).padding(.top, 4)
                             }
                         } else {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Сегодня нет активной смены").font(.title3.bold())
-                                Text("График определится автоматически. Если вышел вне плана — запусти смену вручную.")
-                                    .foregroundStyle(.secondary).font(.subheadline)
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Сегодня нет активной смены").font(.headline).foregroundStyle(.white)
+                                Text("График отслеживается автоматически. Внеплановую смену можно запустить вручную.")
+                                    .font(.subheadline).foregroundStyle(Color.white.opacity(0.74))
                                 Button("Начать внеплановую смену") { store.startWork() }
                                     .buttonStyle(ShiftlyPrimaryButtonStyle())
-                                if let last = store.data.sessions.filter({ $0.end != nil }).max(by: { $0.start < $1.start }) {
-                                    Button { showReport = true } label: {
-                                        Label("Итоги последней смены · " + ruDate(last.start), systemImage: "chart.bar.doc.horizontal")
-                                            .font(.subheadline).frame(maxWidth: .infinity).padding(12)
-                                            .shiftlyGlass(radius: 17)
-                                    }
-                                }
-                            }
-                            .padding(19).shiftlyGlass(radius: 24)
-                        }
-                        Text("БЫСТРЫЕ ДЕЙСТВИЯ")
-                            .font(.caption2.bold()).tracking(1.8).foregroundStyle(.secondary).padding(.top, 3)
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                            Button { showQuickPastBreak = true } label: {
-                                ShiftlyQuickTile(symbol: "clock.badge.plus", title: "Забытый перекур", detail: "Записать задним числом", accent: .orange)
-                            }
-                            Button { showBreakHub = true } label: {
-                                ShiftlyQuickTile(symbol: "cup.and.saucer.fill", title: "Центр отдыха", detail: "Лимиты и история", accent: palette.accent)
-                            }
-                            Button { showNextShift = true } label: {
-                                ShiftlyQuickTile(symbol: "calendar.badge.clock", title: "Следующая", detail: "До выхода на смену", accent: .cyan)
-                            }
-                            Button { showBackup = true } label: {
-                                ShiftlyQuickTile(symbol: "externaldrive.fill.badge.timemachine", title: "Бэкапы", detail: "Сохранить историю", accent: .green)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        if let session = recentSession {
-                            HStack {
-                                Image(systemName: "sparkles").foregroundStyle(palette.accent)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Всё записано").font(.subheadline.bold())
-                                    Text("Последняя смена: " + ruDate(session.start))
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text("\(session.breaks.count) ☕").font(.subheadline.bold())
-                            }
-                            .padding(16).shiftlyGlass(radius: 18)
-                        }
-                        if store.current != nil {
-                            Button("Завершить смену", role: .destructive) { store.endWork() }
-                                .font(.caption).frame(maxWidth: .infinity)
+                            }.padding(17).shiftlyGlass(radius: 22)
                         }
                     }
-                    .padding(.horizontal, 17)
-                    .padding(.top, 10)
-                    .padding(.bottom, 32)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
                 .scrollIndicators(.hidden)
                 .background(ShiftlyBackdrop())
             }
             .navigationTitle("Shiftly")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showBreakHub) { BreakHubView() }
-            .sheet(isPresented: $showNextShift) { NextShiftView() }
             .sheet(isPresented: $showFocus) { ShiftlyFocusView() }
-            .sheet(isPresented: $showBackup) { NavigationStack { BackupCenterView() } }
-            .sheet(isPresented: $showReport) {
-                NavigationStack {
-                    if let session = recentSession { ShiftReportView(sessionID: session.id) }
-                }
-            }
             .sheet(isPresented: $showQuickPastBreak) {
                 if let session = recentSession { QuickPastBreakEditor(sessionID: session.id) }
-                else { BreakHubView() }
+                else { NavigationStack { BreakHubView() } }
             }
+            .confirmationDialog("Завершить смену?", isPresented: $confirmEnd) {
+                Button("Завершить смену", role: .destructive) { store.endWork() }
+                Button("Отмена", role: .cancel) { }
+            } message: { Text("Это закроет текущую смену и остановит перекур.") }
         }
     }
 }
@@ -359,44 +315,59 @@ struct StatsView: View {
                 let sessions = store.data.sessions.filter { Calendar.current.isDate($0.start, equalTo: month, toGranularity: .month) }
                 let completed = sessions.filter { $0.end != nil }
                 let hours = sessions.reduce(0.0) { $0 + store.workSeconds($1) } / 3600
-                let breakSeconds = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
+                let rested = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
                 let allBreaks = sessions.flatMap(\.breaks)
-                let average = allBreaks.isEmpty ? 0 : Int(breakSeconds / Double(allBreaks.count) / 60)
+                let average = allBreaks.isEmpty ? 0 : Int(rested / Double(allBreaks.count) / 60)
                 let within = completed.filter { store.breakSeconds($0) <= Double($0.breakLimitMinutes * 60) }.count
                 let day = sessions.filter { Calendar.current.component(.hour, from: $0.start) < 14 }
                 let night = sessions.filter { Calendar.current.component(.hour, from: $0.start) >= 14 }
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 13) {
                     HStack {
                         Button { month = Calendar.current.date(byAdding: .month, value: -1, to: month)! } label: { Image(systemName: "chevron.left") }
-                        Spacer(); Text(month.formatted(.dateTime.month(.wide).year())).font(.headline); Spacer()
+                        Spacer()
+                        Text(month.formatted(.dateTime.month(.wide).year())).font(.headline).foregroundStyle(.white)
+                        Spacer()
                         Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
                     }
+                    .padding(14).shiftlyGlass(radius: 17)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 11), GridItem(.flexible(), spacing: 11)], spacing: 11) {
+                        stat("Отработано", String(format: "%.1f ч", hours), "briefcase.fill")
+                        stat("Отдых", String(format: "%.1f ч", rested / 3600), "cup.and.saucer.fill")
+                        stat("Средний перекур", "\(average) мин", "timer")
+                        stat("Количество", "\(allBreaks.count)", "number")
+                    }
+                    ShiftlySectionHeader(title: "Перекуры за неделю")
                     ShiftlyWeekBars(sessions: store.data.sessions)
-                    stat("Отработано", String(format: "%.1f ч", hours), "clock.fill")
-                    stat("Перерывы", String(format: "%.1f ч", breakSeconds / 3600), "cup.and.saucer.fill")
-                    stat("Средний перекур", "\(average) мин", "timer")
-                    stat("Количество перекуров", "\(allBreaks.count)", "number")
-                    stat("Смены", "\(completed.count) завершено", "calendar.badge.checkmark")
-                    Text("Дневные и ночные смены").font(.title3.bold())
+                    ShiftlySectionHeader(title: "День и ночь")
                     comparison("Дневные", sessions: day, color: .green)
                     comparison("Ночные", sessions: night, color: .purple)
-                    Text("Дисциплина лимитов").font(.title3.bold())
-                    ProgressView(value: Double(within), total: Double(max(1, completed.count))).tint(violet)
-                    Text("В пределах лимита: \(within) из \(completed.count) завершённых смен")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("Достижения").font(.title2.bold())
-                    achievement("Первая смена", unlocked: completed.count >= 1, progress: completed.count, goal: 1)
-                    achievement("Режим завода", unlocked: completed.count >= 10, progress: completed.count, goal: 10)
-                    achievement("Дисциплина", unlocked: within >= 5, progress: within, goal: 5)
-                    Text("Статистика текущей смены пересчитывается по фактически прошедшему времени.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding()
-            }.scrollIndicators(.hidden).background(ShiftlyBackdrop()).navigationTitle("Статистика")
+                    ShiftlySectionHeader(title: "Лимиты и достижения")
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack { Text("В пределах лимита"); Spacer(); Text("\(within) / \(completed.count)").bold() }
+                            .font(.subheadline).foregroundStyle(.white)
+                        ProgressView(value: Double(within), total: Double(max(1, completed.count))).tint(violet)
+                        achievement("Первая смена", unlocked: completed.count >= 1, progress: completed.count, goal: 1)
+                        achievement("Режим завода", unlocked: completed.count >= 10, progress: completed.count, goal: 10)
+                        achievement("Дисциплина", unlocked: within >= 5, progress: within, goal: 5)
+                    }
+                    .padding(14).shiftlyGlass(radius: 20)
+                    Text("Данные пересчитываются по фактически прошедшему времени.")
+                        .font(.caption).foregroundStyle(Color.white.opacity(0.72))
+                }
+                .padding(16).frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
+            .background(ShiftlyBackdrop())
+            .navigationTitle("Статистика")
         }
     }
     func stat(_ title: String, _ value: String, _ symbol: String) -> some View {
-        HStack { Image(systemName: symbol).foregroundStyle(violet).frame(width: 32); Text(title); Spacer(); Text(value).bold() }
-            .padding().shiftlyGlass(radius: 18)
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol).font(.caption).foregroundStyle(Color.white.opacity(0.73))
+            Text(value).font(.system(.title2, design: .rounded, weight: .bold))
+                .foregroundStyle(.white).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .padding(15).shiftlyGlass(radius: 18)
     }
     func comparison(_ title: String, sessions: [WorkSession], color: Color) -> some View {
         let seconds = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
@@ -411,7 +382,7 @@ struct StatsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Image(systemName: unlocked ? "trophy.fill" : "lock.fill").foregroundStyle(unlocked ? .yellow : .secondary); Text(name); Spacer(); Text("\(min(progress,goal))/\(goal)").foregroundStyle(.secondary) }
             ProgressView(value: Double(min(progress,goal)), total: Double(goal)).tint(violet)
-        }.padding().shiftlyGlass(radius: 18)
+        }.padding(.vertical, 4)
     }
 }
 
@@ -422,59 +393,76 @@ struct PayrollView: View {
     @AppStorage("shiftly.salaryGoal") private var salaryGoal = 120_000.0
     var body: some View {
         NavigationStack {
-            Form {
+            ScrollView {
                 let result = payroll(for: store, settings: pay, month: month)
-                Section("Расчёт за месяц") {
+                let forecast = PayrollProjection.calculate(store: store, settings: pay, month: month)
+                VStack(alignment: .leading, spacing: 14) {
                     DatePicker("Месяц", selection: $month, displayedComponents: .date)
+                        .padding(14).shiftlyGlass(radius: 18)
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Уже начислено · оценка")
-                            .font(.caption.bold()).foregroundStyle(.secondary)
-                        Text(result.estimated, format: .currency(code: "RUB"))
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .minimumScaleFactor(0.7)
-                            .foregroundStyle(violet)
-                        Label("Прогноз строится по твоим ставкам", systemImage: "sparkles")
-                            .font(.caption2).foregroundStyle(.secondary)
+                        Text("ПРОГНОЗ ЗАРПЛАТЫ")
+                            .font(.caption2.bold()).tracking(1.4).foregroundStyle(.white.opacity(0.73))
+                        Text(forecast.total, format: .currency(code: "RUB"))
+                            .font(.system(size: 33, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white).minimumScaleFactor(0.7).lineLimit(1)
+                        HStack {
+                            Text("Уже начислено · оценка")
+                            Spacer()
+                            Text(result.estimated, format: .currency(code: "RUB"))
+                        }.font(.subheadline).foregroundStyle(.white.opacity(0.80))
+                        ProgressView(value: min(1, max(0, forecast.total / max(1, salaryGoal)))).tint(violet)
+                        Text("Осталось по графику: \(forecast.upcomingShifts) смен")
+                            .font(.caption).foregroundStyle(.white.opacity(0.75))
                     }
-                    .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                    .shiftlyGlass(radius: 23, emphasis: true)
-                    LabeledContent("Учтено рабочих часов", value: String(format: "%.1f", result.normalHours))
-                    LabeledContent("Из них ночных (22–06)", value: String(format: "%.1f", result.nightHours))
-                    LabeledContent("Доп. смены без записи", value: String(format: "%.1f", result.overtimeHours))
-                }
-                Section("Прогноз до конца месяца") {
-                    let forecast = PayrollProjection.calculate(store: store, settings: pay, month: month)
-                    Text(forecast.total, format: .currency(code: "RUB"))
-                        .font(.title2.bold()).foregroundStyle(violet)
-                    LabeledContent("По текущим данным", value: result.estimated.formatted(.currency(code: "RUB")))
-                    LabeledContent("По оставшимся сменам", value: forecast.future.formatted(.currency(code: "RUB")))
-                    LabeledContent("Осталось смен по графику", value: "\(forecast.upcomingShifts)")
-                    Text("Оценка по заданным ставкам. Будущие смены считаются по 12 часов без вычета будущих перерывов; налоги, условия премий и доплаты предприятия не учитываются.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Цель на месяц") {
-                    let projected = PayrollProjection.calculate(store: store, settings: pay, month: month).total
-                    LabeledContent("Прогноз", value: projected.formatted(.currency(code: "RUB")))
-                    ProgressView(value: min(1, projected / max(1, salaryGoal))).tint(violet)
-                    HStack {
-                        Text("Цель, ₽")
-                        Spacer()
-                        TextField("120000", value: $salaryGoal, format: .number)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 130)
+                    .padding(18).shiftlyGlass(radius: 23, emphasis: true)
+                    ShiftlySectionHeader(title: "Отработанное время")
+                    VStack(spacing: 12) {
+                        payRow("Учтено рабочих часов", String(format: "%.1f ч", result.normalHours))
+                        payRow("Ночные часы (22–06)", String(format: "%.1f ч", result.nightHours))
+                        payRow("Подработки без записи", String(format: "%.1f ч", result.overtimeHours))
+                        payRow("Будущие смены · оценка", forecast.future.formatted(.currency(code: "RUB")))
                     }
+                    .padding(16).shiftlyGlass(radius: 20)
+                    ShiftlySectionHeader(title: "Ставки и цель")
+                    VStack(spacing: 14) {
+                        payInput("Цель за месяц, ₽", value: $salaryGoal, width: 122)
+                        payInput("₽ за час", value: $pay.hourlyRate, width: 100)
+                        payInput("Ночные ×", value: $pay.nightMultiplier, width: 90)
+                        payInput("Подработка ×", value: $pay.overtimeMultiplier, width: 90)
+                        payInput("Премия, ₽", value: $pay.monthlyBonus, width: 100)
+                    }
+                    .padding(16).shiftlyGlass(radius: 20)
+                    Text("Расчёт предварительный: будущие смены считаются по 12 часов. Налоги, премиальные условия и правила предприятия могут изменить итог.")
+                        .font(.caption).foregroundStyle(Color.white.opacity(0.73))
                 }
-                Section("Твои ставки") {
-                    HStack { Text("₽ за час"); Spacer(); TextField("0", value: $pay.hourlyRate, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 110) }
-                    HStack { Text("Коэффициент ночных"); Spacer(); TextField("1.2", value: $pay.nightMultiplier, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 70) }
-                    HStack { Text("Коэффициент подработки"); Spacer(); TextField("1.5", value: $pay.overtimeMultiplier, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 70) }
-                    HStack { Text("Премия, ₽"); Spacer(); TextField("0", value: $pay.monthlyBonus, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 110) }
-                }
-                Section { Text("Предварительная оценка, не расчётный лист. Реальные выплаты зависят от правил предприятия, удержаний и того, какие смены уже учтены в истории.").font(.caption).foregroundStyle(.secondary) }
-            }.scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Зарплата")
+                .frame(maxWidth: .infinity).padding(16)
+            }
+            .scrollIndicators(.hidden)
+            .background(ShiftlyBackdrop())
+            .navigationTitle("Зарплата")
         }
     }
+    private func payRow(_ name: String, _ amount: String) -> some View {
+        HStack(spacing: 12) {
+            Text(name).foregroundStyle(.white.opacity(0.82))
+            Spacer(minLength: 8)
+            Text(amount).foregroundStyle(.white).bold().lineLimit(1).minimumScaleFactor(0.7)
+        }.font(.subheadline)
+    }
+    private func payInput(_ title: String, value: Binding<Double>, width: CGFloat) -> some View {
+        HStack(spacing: 10) {
+            Text(title).foregroundStyle(.white.opacity(0.84))
+            Spacer(minLength: 8)
+            TextField("0", value: value, format: .number)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: width)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9).padding(.vertical, 7)
+                .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+        }.font(.subheadline)
+    }
+
 }
 
 struct CalendarView: View {
@@ -495,7 +483,7 @@ struct CalendarView: View {
                         Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
                     }
                     let days = monthDays()
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 5) {
                         ForEach(["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
                         ForEach(0..<leadingBlanks(), id: \.self) { _ in Color.clear.frame(height: 55) }
                         ForEach(days, id: \.self) { day in
@@ -511,13 +499,16 @@ struct CalendarView: View {
                                     Capsule().fill(Color.pink.opacity(min(1, 0.3 + breakMinutes / 150)))
                                         .frame(width: 21, height: 3)
                                 }
-                            }.frame(maxWidth: .infinity).frame(height: 55)
-                                .shiftlyGlass(radius: 12)
-                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Calendar.current.isDateInToday(day) ? Color.purple : Color.clear, lineWidth: 1.5))
+                            }.frame(maxWidth: .infinity).frame(height: 52)
+                                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Calendar.current.isDateInToday(day) ? Color.purple : Color.clear, lineWidth: 1.5))
                         }
                     }
-                    Text("Д — день 08–20 · Н — ночь 20–08 · В — выходной · розовая полоска — записанный отдых")
+                    Text("Д — день 08–20 · Н — ночь 20–08 · В — выходной · розовая полоска — отдых")
                         .font(.caption).foregroundStyle(.secondary)
+                    NavigationLink { NextShiftView() } label: {
+                        ShiftlyMenuRow(symbol: "calendar", title: "Следующая смена", subtitle: "Время до выхода на работу", accent: .cyan)
+                    }.buttonStyle(.plain)
                     Divider()
                     Text("Добавить подработку").font(.headline)
                     DatePicker("Дата", selection: $extraDate, displayedComponents: .date)
@@ -534,8 +525,9 @@ struct CalendarView: View {
                             Button(role: .destructive) { store.removeExtra(extra.id) } label: { Image(systemName: "trash") }
                         }.font(.subheadline)
                     }
-                    Text("Важно: проверка 42 часов отдыха появится после уточнения правил предприятия.").font(.caption).foregroundStyle(.secondary)
-                }.padding()
+                    Text("Проверка правила 42 часов требует уточнения условий предприятия.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(16).frame(maxWidth: .infinity)
             }.scrollIndicators(.hidden).background(ShiftlyBackdrop()).navigationTitle("График")
         }
     }
@@ -555,22 +547,45 @@ struct CalendarView: View {
 struct HistoryView: View {
     @EnvironmentObject var store: ShiftStore
     var body: some View {
-        NavigationStack {
-            List(store.data.sessions.reversed()) { session in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(session.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU")))).font(.headline)
-                    Text(session.end == nil ? "Смена продолжается" : "Завершена").foregroundStyle(.secondary)
-                    Text("Работа: \(timeString(store.workSeconds(session))) · Перекуры: \(timeString(store.breakSeconds(session)))")
-                        .font(.caption).monospacedDigit()
-                    Text("Лимит: \(session.breakLimitMinutes) мин · Перекуров: \(session.breaks.count)").font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        NavigationLink("Исправить") { SessionEditor(sessionID: session.id) }.font(.caption)
-                        Spacer()
-                        NavigationLink("Отчёт смены") { ShiftReportView(sessionID: session.id) }.font(.caption)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(store.data.sessions.sorted(by: { $0.start > $1.start }))) { session in
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack(spacing: 6) {
+                                Image(systemName: session.end == nil ? "clock.fill" : "checkmark.circle.fill")
+                                    .foregroundStyle(session.end == nil ? .purple : .green)
+                                Text(ruDate(session.start)).font(.subheadline.bold()).foregroundStyle(.white)
+                                Spacer()
+                            }
+                            Text(session.end == nil ? "Смена идёт" : "Смена завершена")
+                                .font(.caption).foregroundStyle(Color.white.opacity(0.75))
+                            HStack {
+                                Label(timeString(store.workSeconds(session)), systemImage: "briefcase.fill")
+                                Spacer(minLength: 8)
+                                Label(timeString(store.breakSeconds(session)), systemImage: "cup.and.saucer.fill")
+                            }.font(.caption).foregroundStyle(.white.opacity(0.86))
+                            HStack(spacing: 12) {
+                                NavigationLink { SessionEditor(sessionID: session.id) } label: {
+                                    Label("Исправить", systemImage: "pencil")
+                                }
+                                Spacer()
+                                NavigationLink { ShiftReportView(sessionID: session.id) } label: {
+                                    Label("Отчёт", systemImage: "doc.text")
+                                }
+                            }.font(.subheadline.bold())
+                        }
+                        .padding(15).shiftlyGlass(radius: 19)
                     }
-                }.padding(13).shiftlyGlass(radius: 16).listRowBackground(Color.clear)
-            }.scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("История").overlay { if store.data.sessions.isEmpty { ContentUnavailableView("История пуста", systemImage: "clock") } }
-        }
+                    if store.data.sessions.isEmpty {
+                        Text("Смен пока нет").foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity).padding(18).shiftlyGlass(radius: 18)
+                    }
+                }
+                .padding(16).frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
+            .background(ShiftlyBackdrop())
+            .navigationTitle("История")
     }
 }
 
@@ -582,7 +597,6 @@ struct SettingsView: View {
     @AppStorage("shiftly.neonNight") private var neonNight = true
     @AppStorage("shiftly.compactHome") private var compactHome = false
     var body: some View {
-        NavigationStack {
             Form {
                 Section("Лимит на новую смену") {
                     Picker("Минуты", selection: Binding(get: { store.data.limitMinutes }, set: { store.setLimit($0) })) {
@@ -640,20 +654,15 @@ struct SettingsView: View {
                     Text(live.status).font(.caption).textSelection(.enabled)
                     Text("Запусти смену и перекур, затем проверь этот статус.").font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Резервные копии") {
-                    NavigationLink { BackupCenterView() } label: {
-                        Label("Открыть центр резервных копий", systemImage: "externaldrive.fill.badge.timemachine")
-                    }
-                    Text("Просмотр, экспорт и восстановление JSON. Перед восстановлением создаётся страховочная копия.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 Section("О приложении") {
                     Text("Shiftly \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") · сборка \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")")
-                    Text("Версия IPA: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
                     Text("Данные хранятся локально на устройстве.").font(.caption).foregroundStyle(.secondary)
                 }
-            }.scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Настройки")
-        }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(ShiftlyBackdrop())
+            .navigationTitle("Настройки")
     }
 }
 
@@ -677,22 +686,22 @@ struct ShiftRing: View {
                 .shadow(color: palette.accent.opacity(0.65), radius: 10)
                 .animation(.easeInOut(duration: 0.6), value: Int(remaining))
             VStack(spacing: 10) {
-                Image(systemName: "sparkle")
+                Image(systemName: "sparkles")
                     .font(.caption).foregroundStyle(palette.accent)
                 Text(subtitle)
                     .font(.caption2.bold()).tracking(1)
                     .foregroundStyle(.secondary)
                 Text(remaining < 0 ? "+" + timeString(-remaining) : timeString(remaining))
-                    .font(.system(size: compact ? 28 : 34, weight: .bold, design: .rounded))
+                    .font(.system(size: compact ? 23 : 31, weight: .bold, design: .rounded))
                     .monospacedDigit().minimumScaleFactor(0.62).lineLimit(1)
                     .foregroundStyle(remaining < 0 ? .orange : .white)
-                Text("SHIFTLY · OPERATOR")
+                Text("SHIFTLY")
                     .font(.caption2.bold()).tracking(1.4)
                     .foregroundStyle(palette.accent)
             }
             .padding(18)
         }
-        .frame(width: compact ? 160 : 236, height: compact ? 160 : 236)
+        .frame(width: compact ? 146 : 208, height: compact ? 146 : 208)
         .padding(.vertical, compact ? 2 : 8)
         .accessibilityElement(children: .combine)
     }
@@ -705,38 +714,73 @@ struct LineJournalView: View {
     @State private var details = ""
     @State private var duration = 0
     @State private var editing: LineNote?
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Новая запись") {
-                    Picker("Ручей", selection: $stream) { ForEach(["910","911","912","Другой"], id: \.self) { Text($0) } }
-                    Picker("Событие", selection: $category) { ForEach(["Заметка","Остановка","Ремонт","Переналадка","Замена рулона","Запуск"], id: \.self) { Text($0) } }
-                    TextField("Что произошло?", text: $details, axis: .vertical).lineLimit(2...5)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 13) {
+                ShiftlySectionHeader(title: "Новая запись")
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Ручей", selection: $stream) {
+                        ForEach(["910", "911", "912", "Другой"], id: \.self) { Text($0) }
+                    }
+                    Picker("Событие", selection: $category) {
+                        ForEach(["Заметка", "Остановка", "Ремонт", "Переналадка", "Замена рулона", "Запуск"], id: \.self) { Text($0) }
+                    }
+                    TextField("Что произошло?", text: $details, axis: .vertical)
+                        .lineLimit(2...5)
+                        .padding(12)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
                     Stepper("Простой: \(duration) мин", value: $duration, in: 0...720, step: 1)
-                    Button("Добавить запись") {
-                        store.addNote(LineNote(date: Date(), stream: stream, category: category, details: details, durationMinutes: duration))
+                    Button {
+                        store.addNote(LineNote(date: Date(), stream: stream, category: category,
+                                               details: details, durationMinutes: duration))
                         details = ""; duration = 0
-                    }.disabled(details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } label: {
+                        Label("Добавить запись", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(ShiftlyPrimaryButtonStyle())
+                    .disabled(details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Section("Записи") {
-                    ForEach(store.notes.sorted { $0.date > $1.date }) { note in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("\(note.category) · \(note.stream)").bold()
-                            Text(note.details)
-                            Text("\(note.date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU")))) · \(note.durationMinutes) мин")
-                                .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("Изменить") { editing = note }.font(.caption)
-                                Button("Удалить", role: .destructive) { store.removeNote(note.id) }.font(.caption)
+                .padding(16).shiftlyGlass(radius: 20)
+                ShiftlySectionHeader(title: "История событий")
+                if store.notes.isEmpty {
+                    Text("Записей пока нет").foregroundStyle(.white.opacity(0.73))
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(15)
+                        .shiftlyGlass(radius: 18)
+                }
+                ForEach(store.notes.sorted(by: { $0.date > $1.date })) { note in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("\(note.category) · ручей \(note.stream)")
+                                .font(.subheadline.bold()).foregroundStyle(.white)
+                            Spacer()
+                            if note.durationMinutes > 0 {
+                                Text("\(note.durationMinutes) мин").font(.caption.bold())
+                                    .foregroundStyle(.orange)
                             }
                         }
+                        Text(note.details).font(.subheadline).foregroundStyle(.white.opacity(0.84))
+                        Text(ruDate(note.date)).font(.caption2)
+                            .foregroundStyle(.white.opacity(0.67))
+                        HStack {
+                            Button("Изменить") { editing = note }
+                            Spacer()
+                            Button("Удалить", role: .destructive) { store.removeNote(note.id) }
+                        }
+                        .font(.caption.bold())
                     }
+                    .padding(15).shiftlyGlass(radius: 19)
                 }
-            }.scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Журнал линии")
-            .sheet(item: $editing) { note in NoteEditor(note: note) }
+            }
+            .padding(16).frame(maxWidth: .infinity)
         }
+        .scrollIndicators(.hidden)
+        .background(ShiftlyBackdrop())
+        .navigationTitle("Журнал линии")
+        .sheet(item: $editing) { note in NoteEditor(note: note) }
     }
 }
+
 
 struct NoteEditor: View {
     @EnvironmentObject var store: ShiftStore
@@ -875,72 +919,3 @@ struct BreakEditor: View {
     }
 }
 
-struct BackupControls: View {
-    @EnvironmentObject var store: ShiftStore
-    @State private var exportingJSON = false
-    @State private var exportingCSV = false
-    @State private var importing = false
-    @State private var showingRestoreConfirmation = false
-    @State private var pendingRestore: ShiftData?
-    @State private var pendingFileName = ""
-    @State private var message = ""
-
-    var body: some View {
-        Button("Сохранить резервную копию JSON") { exportingJSON = true }
-        Button("Экспорт CSV") { exportingCSV = true }
-        Button("Восстановить из JSON") { importing = true }
-        if let latest = AutomaticBackups.latestFile() {
-            ShareLink(item: latest) {
-                Label("Сохранить автоматическую копию в Файлы", systemImage: "square.and.arrow.up")
-            }
-            Text("Автокопии: \(AutomaticBackups.snapshots().count) · хранятся на этом iPhone")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        Text("Автосохранение выполняется после изменений, архив хранит до 20 снимков. Для сохранения при удалении приложения перенеси JSON в «Файлы» / iCloud Drive.")
-            .font(.caption).foregroundStyle(.secondary)
-        if !message.isEmpty { Text(message).font(.caption) }
-        Text("Восстановление заменяет текущие данные. Перед заменой Shiftly сохранит страховочную копию на этом устройстве.")
-            .font(.caption).foregroundStyle(.secondary)
-            .fileExporter(isPresented: $exportingJSON, document: ShiftBackupDocument(data: store.data), contentType: .json, defaultFilename: "Shiftly-backup") { _ in }
-            .fileExporter(isPresented: $exportingCSV, document: ShiftCSVDocument(data: store.data), contentType: .commaSeparatedText, defaultFilename: "Shiftly-export") { _ in }
-            // Some Files providers label an exported .json as generic data instead
-            // of public.json, making it greyed out when filtering only by .json.
-            // Allow picking a file, then validate its actual JSON contents.
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
-                do {
-                    let url = try result.get()
-                    guard url.isFileURL, !url.hasDirectoryPath else {
-                        message = "Выбери файл резервной копии, а не папку"
-                        return
-                    }
-                    let scoped = url.startAccessingSecurityScopedResource()
-                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    let contents = try Data(contentsOf: url)
-                    let restored = try JSONDecoder().decode(ShiftData.self, from: contents)
-                    pendingRestore = restored
-                    pendingFileName = url.lastPathComponent
-                    showingRestoreConfirmation = true
-                } catch {
-                    message = "Не удалось прочитать резервную копию. Выбери JSON-файл, сохранённый из Shiftly. \(error.localizedDescription)"
-                }
-            }
-            .alert("Восстановить данные Shiftly?", isPresented: $showingRestoreConfirmation) {
-                Button("Отмена", role: .cancel) {
-                    pendingRestore = nil
-                }
-                Button("Восстановить", role: .destructive) {
-                    guard let restored = pendingRestore else { return }
-                    guard AutomaticBackups.saveBeforeRestore(store.data) else {
-                        message = "Не получилось сохранить страховочную копию. Восстановление отменено."
-                        pendingRestore = nil
-                        return
-                    }
-                    store.replaceData(restored)
-                    pendingRestore = nil
-                    message = "Данные восстановлены из \(pendingFileName)"
-                }
-            } message: {
-                Text("Текущая история будет заменена данными из файла «\(pendingFileName)». Перед заменой создадим отдельную локальную копию текущей истории.")
-            }
-    }
-}

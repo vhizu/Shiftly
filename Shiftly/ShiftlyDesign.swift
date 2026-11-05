@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Shiftly 1.8 visual system. Appearance preferences live in UserDefaults,
+// Shiftly 1.9 visual system. Appearance preferences live in UserDefaults,
 // never in ShiftData, so old backup files remain compatible.
 enum ShiftlyPalette: String, CaseIterable, Identifiable {
     case violet = "Night Violet"
@@ -93,38 +93,109 @@ struct ShiftlyBackdrop: View {
     }
 }
 
+// The card is deliberately translucent: the animated gradient must remain
+// visible through it. Liquid Glass is primarily used for interactive controls
+// while large information cards keep a thin material to preserve legibility.
 struct ShiftlyGlass: ViewModifier {
     var radius: CGFloat = 22
     var emphasis: Bool = false
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     private var accent: Color { (ShiftlyPalette(rawValue: themeName) ?? .violet).accent }
 
-    @ViewBuilder func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular, in: shape)
-                .overlay(shape.stroke(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.07), accent.opacity(0.20)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.9))
-                .shadow(color: accent.opacity(emphasis ? 0.22 : 0.09), radius: emphasis ? 25 : 14, y: 9)
-        } else {
-            content
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(LinearGradient(colors: [.white.opacity(0.34), .white.opacity(0.04), accent.opacity(0.13)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.9))
-                .shadow(color: accent.opacity(emphasis ? 0.22 : 0.09), radius: emphasis ? 25 : 14, y: 9)
-        }
-        #else
-        content
-            .background(.ultraThinMaterial, in: shape)
-            .overlay(shape.stroke(.white.opacity(0.18), lineWidth: 0.9))
-            .shadow(color: accent.opacity(0.10), radius: 14, y: 9)
-        #endif
+        return content
+            .frame(maxWidth: .infinity)
+            .background {
+                shape
+                    .fill(Color.white.opacity(emphasis ? 0.075 : 0.045))
+                    .background(.ultraThinMaterial, in: shape)
+                    .overlay {
+                        shape.strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.40), .white.opacity(0.12), accent.opacity(0.20)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.85)
+                    }
+                    .overlay(alignment: .top) {
+                        Capsule().fill(.white.opacity(0.16)).frame(height: 1).padding(.horizontal, radius)
+                    }
+            }
+            .shadow(color: .black.opacity(0.16), radius: 10, y: 5)
+            .shadow(color: accent.opacity(emphasis ? 0.13 : 0.045), radius: 20, y: 7)
     }
 }
 
 extension View {
     func shiftlyGlass(radius: CGFloat = 22, emphasis: Bool = false) -> some View {
         modifier(ShiftlyGlass(radius: radius, emphasis: emphasis))
+    }
+}
+
+// Compact, consistent row used everywhere instead of 180-point tall tiles.
+struct ShiftlyMenuRow: View {
+    let symbol: String
+    let title: String
+    let subtitle: String
+    var accent: Color = .purple
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(accent)
+                .frame(width: 42, height: 42)
+                .background(accent.opacity(0.17), in: RoundedRectangle(cornerRadius: 13))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                Text(subtitle).font(.caption).foregroundStyle(Color.white.opacity(0.72))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(Color.white.opacity(0.45))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shiftlyGlassControl(radius: 19)
+        .contentShape(RoundedRectangle(cornerRadius: 19))
+    }
+}
+
+struct ShiftlySectionHeader: View {
+    let title: String
+    var body: some View {
+        Text(title.uppercased())
+            .font(.caption2.bold()).tracking(1.5)
+            .foregroundStyle(Color.white.opacity(0.75))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 3)
+    }
+}
+
+// Liquid Glass is most effective on touch controls; keep long content cards
+// translucent (not fully tinted) so the aurora behind them stays visible.
+struct ShiftlyGlassControl: ViewModifier {
+    var radius: CGFloat = 16
+    @ViewBuilder func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.20), lineWidth: 0.7))
+        } else {
+            content.background(.ultraThinMaterial, in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.20), lineWidth: 0.7))
+        }
+        #else
+        content.background(.ultraThinMaterial, in: shape)
+            .overlay(shape.strokeBorder(.white.opacity(0.20), lineWidth: 0.7))
+        #endif
+    }
+}
+
+extension View {
+    func shiftlyGlassControl(radius: CGFloat = 16) -> some View {
+        modifier(ShiftlyGlassControl(radius: radius))
     }
 }
 
@@ -151,21 +222,7 @@ struct ShiftlyQuickTile: View {
     let detail: String
     var accent: Color = .purple
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Image(systemName: symbol)
-                .font(.system(size: 23, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 42, height: 42)
-                .background(accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 14))
-            Spacer(minLength: 0)
-            Text(title).font(.subheadline.bold()).foregroundStyle(.primary)
-            Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 120)
-        .padding(14)
-        .shiftlyGlass(radius: 22)
-        .contentShape(RoundedRectangle(cornerRadius: 22))
+        ShiftlyMenuRow(symbol: symbol, title: title, subtitle: detail, accent: accent)
     }
 }
 
@@ -174,13 +231,17 @@ struct ShiftlyStatChip: View {
     let title: String
     let value: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Label(title, systemImage: symbol).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.system(.title3, design: .rounded, weight: .bold)).monospacedDigit().minimumScaleFactor(0.7).lineLimit(1)
+        VStack(alignment: .leading, spacing: 5) {
+            Label(title, systemImage: symbol)
+                .font(.caption2).foregroundStyle(Color.white.opacity(0.74))
+            Text(value)
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
+                .monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(15)
-        .shiftlyGlass(radius: 18)
+        .padding(12)
+        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
