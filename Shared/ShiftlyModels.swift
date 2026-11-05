@@ -1,5 +1,15 @@
 import Foundation
 
+// Keep older Shiftly JSON readable: missing BreakSession.kind means a smoking break.
+enum BreakKind: String, Codable, Hashable {
+    case smoke
+    case lunch
+
+    var title: String { self == .lunch ? "Обед" : "Перекур" }
+    var icon: String { self == .lunch ? "fork.knife" : "cup.and.saucer.fill" }
+    var defaultMinutes: Int { self == .lunch ? 30 : 15 }
+}
+
 struct WorkSession: Codable, Identifiable {
     var id = UUID()
     var start: Date
@@ -12,6 +22,9 @@ struct BreakSession: Codable, Identifiable {
     var id = UUID()
     var start: Date
     var end: Date?
+    // Optional to decode 1.9.x and earlier backups without a migration crash.
+    var kind: BreakKind? = nil
+    var type: BreakKind { kind ?? .smoke }
     func seconds(asOf now: Date) -> TimeInterval { max(0, (end ?? now).timeIntervalSince(start)) }
 }
 struct ExtraShift: Codable, Identifiable {

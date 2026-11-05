@@ -54,11 +54,13 @@ struct ShiftlyBackdrop: View {
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     @AppStorage("shiftly.neonNight") private var neonNight = true
     @AppStorage("shiftly.motion") private var motionEnabled = true
+    @AppStorage("shiftly.autoAtmosphere") private var autoAtmosphere = true
+    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     @State private var glowMoves = false
 
     private var palette: ShiftlyPalette { ShiftlyPalette(rawValue: themeName) ?? .violet }
     private var isNight: Bool {
-        guard let session = store.current else { return false }
+        guard autoAtmosphere, let session = store.current else { return false }
         return Calendar.current.component(.hour, from: session.start) >= 14
     }
 
@@ -67,7 +69,7 @@ struct ShiftlyBackdrop: View {
             ZStack {
                 LinearGradient(colors: palette.background, startPoint: .topLeading, endPoint: .bottomTrailing)
                 Circle()
-                    .fill(palette.accent.opacity(isNight && neonNight ? 0.34 : 0.17))
+                    .fill(palette.accent.opacity(isNight && neonNight ? (store.isOnBreak ? 0.39 : 0.34) : 0.17))
                     .frame(width: geometry.size.width * 1.0, height: geometry.size.width * 1.0)
                     .blur(radius: 95)
                     .offset(x: geometry.size.width * (glowMoves ? 0.30 : 0.48),
@@ -86,9 +88,22 @@ struct ShiftlyBackdrop: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
-        .onAppear {
-            guard motionEnabled && !reduceMotion else { return }
+        .onAppear { updateMotion() }
+        .onChange(of: motionEnabled) { _, _ in updateMotion() }
+        .onChange(of: reduceMotion) { _, _ in updateMotion() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+            lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+            updateMotion()
+        }
+    }
+
+    private func updateMotion() {
+        if motionEnabled && !reduceMotion && !lowPower {
             withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) { glowMoves = true }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { glowMoves = false }
         }
     }
 }
@@ -271,21 +286,26 @@ struct ShiftlyFocusView: View {
             TimelineView(.periodic(from: .now, by: 1)) { tick in
                 let session = store.current
                 let activeBreak = session?.breaks.last(where: { $0.end == nil })
-                let remaining = activeBreak.map { Double(store.perBreakLimitMinutes * 60) - tick.date.timeIntervalSince($0.start) }
+                let kindLimit = activeBreak?.type == .lunch ? 30 : store.perBreakLimitMinutes
+                let remaining = activeBreak.map { Double(kindLimit * 60) - tick.date.timeIntervalSince($0.start) }
                     ?? session.map { Double($0.breakLimitMinutes * 60) - store.breakSeconds($0, now: tick.date) }
                     ?? 0
                 VStack(spacing: 27) {
                     Spacer()
                     Image(systemName: activeBreak == nil ? "moon.stars.fill" : "cup.and.saucer.fill")
                         .font(.system(size: 38)).foregroundStyle(.purple)
-                    Text(activeBreak == nil ? "Остаток отдыха" : "Текущий перекур")
+                    Text(activeBreak == nil ? "Остаток отдыха" : activeBreak?.type == .lunch ? "Текущий обед" : "Текущий перекур")
                         .font(.headline).foregroundStyle(.secondary)
                     ShiftRing(remaining: remaining,
-                              total: Double((activeBreak == nil ? (session?.breakLimitMinutes ?? 120) : store.perBreakLimitMinutes) * 60),
-                              subtitle: activeBreak == nil ? "ЛИМИТ СМЕНЫ" : "ОДИН ПЕРЕКУР")
+                              total: Double((activeBreak == nil ? (session?.breakLimitMinutes ?? 120) : kindLimit) * 60),
+                              subtitle: activeBreak == nil ? "ЛИМИТ СМЕНЫ" : activeBreak?.type == .lunch ? "ОБЕД · 30 МИН" : "ПЕРЕКУР")
                     if session != nil {
-                        Button(store.isOnBreak ? "Вернулся к работе" : "Начать перекур") { store.toggleBreak() }
+                        Button(activeBreak == nil ? "Начать перекур" : activeBreak?.type == .lunch ? "Завершить обед" : "Вернулся к работе") { store.toggleBreak() }
                             .buttonStyle(ShiftlyPrimaryButtonStyle())
+                        if activeBreak == nil {
+                            Button("Обед · 30 минут") { store.startBreak(kind: .lunch) }
+                                .buttonStyle(.bordered)
+                        }
                     } else {
                         Text("Сейчас нет активной смены").foregroundStyle(.secondary)
                     }

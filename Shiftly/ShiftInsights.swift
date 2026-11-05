@@ -58,10 +58,10 @@ struct BreakHubView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 9) {
-                        Label("ЦЕНТР ПЕРЕКУРОВ", systemImage: "cup.and.saucer.fill")
+                        Label("ЦЕНТР ПЕРЕРЫВОВ", systemImage: "cup.and.saucer.fill")
                             .font(.caption.bold()).tracking(1.6).foregroundStyle(.purple)
                         Text("Твоё время отдыха").font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text("Добавь забытый перекур или продолжи уже начатый — без потери минут.")
+                        Text("Обед и перекуры расходуют один лимит. Забытый перерыв можно внести задним числом.")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,7 +89,7 @@ struct BreakHubView: View {
                         .shiftlyGlass(radius: 22)
 
                         Button { showPastEditor = true } label: {
-                            Label("+ Добавить забытый перекур", systemImage: "clock.arrow.circlepath")
+                            Label("+ Добавить забытый перерыв", systemImage: "clock.arrow.circlepath")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(ShiftlyPrimaryButtonStyle())
@@ -118,14 +118,14 @@ struct BreakHubView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 9) {
-                            Text("Последние перекуры").font(.headline)
+                            Text("Последние перерывы").font(.headline)
                             if session.breaks.isEmpty {
                                 Text("Записей пока нет").foregroundStyle(.secondary)
                             }
                             ForEach(Array(session.breaks.sorted(by: { $0.start > $1.start }).prefix(5))) { entry in
                                 HStack {
                                     VStack(alignment: .leading) {
-                                        Text(ruDate(entry.start)).font(.subheadline)
+                                        Text(entry.type.title + " · " + ruDate(entry.start)).font(.subheadline)
                                         Text(entry.end == nil ? "Идёт сейчас" : "Завершён")
                                             .font(.caption).foregroundStyle(.secondary)
                                     }
@@ -151,7 +151,7 @@ struct BreakHubView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Перекуры")
+            .navigationTitle("Перерывы")
             .navigationBarTitleDisplayMode(.inline)
             .background(ShiftlyBackdrop())
             .sheet(isPresented: $showPastEditor) {
@@ -166,6 +166,7 @@ struct QuickPastBreakEditor: View {
     let sessionID: UUID
     @State private var start = Date().addingTimeInterval(-15 * 60)
     @State private var end = Date()
+    @State private var kind: BreakKind = .smoke
     @State private var errorMessage: String?
     @State private var initialized = false
 
@@ -174,15 +175,19 @@ struct QuickPastBreakEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Когда был перекур?") {
+                Section("Когда был перерыв?") {
+                    Picker("Тип", selection: $kind) {
+                        Text("Перекур").tag(BreakKind.smoke)
+                        Text("Обед").tag(BreakKind.lunch)
+                    }
                     DatePicker("Начало", selection: $start, displayedComponents: [.date, .hourAndMinute])
                     DatePicker("Конец", selection: $end, displayedComponents: [.date, .hourAndMinute])
                     Text("Данные добавятся в историю и общий лимит. Новый таймер не запустится.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Быстро: длина перекура") {
+                Section("Быстро: длительность") {
                     HStack {
-                        ForEach([5, 10, 15], id: \.self) { minutes in
+                        ForEach(kind == .lunch ? [15, 20, 30] : [5, 10, 15], id: \.self) { minutes in
                             Button("\(minutes) мин") {
                                 let proposed = end.addingTimeInterval(-Double(minutes * 60))
                                 start = max(shift?.start ?? proposed, proposed)
@@ -196,13 +201,13 @@ struct QuickPastBreakEditor: View {
                 }
                 Section {
                     Button("Добавить в историю") {
-                        errorMessage = store.addPastBreak(sessionID: sessionID, start: start, end: end)
+                        errorMessage = store.addPastBreak(sessionID: sessionID, start: start, end: end, kind: kind)
                         if errorMessage == nil { dismiss() }
                     }
                     .disabled(end <= start || end > Date())
                 }
             }
-            .navigationTitle("Забытый перекур")
+            .navigationTitle("Забытый перерыв")
             .navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden)
             .background(ShiftlyBackdrop())
@@ -282,7 +287,12 @@ struct ShiftReportView: View {
                 let now = Date()
                 let elapsed = store.breakSeconds(session, now: now)
                 let worked = store.workSeconds(session, now: now)
-                let longest = session.breaks.map { $0.seconds(asOf: now) }.max() ?? 0
+                let longest = session.breaks.map {
+                    max(0, ($0.end ?? min(now, session.end ?? now)).timeIntervalSince($0.start))
+                }.max() ?? 0
+                let smokeCount = session.breaks.filter { $0.type == .smoke }.count
+                let lunchCount = session.breaks.filter { $0.type == .lunch }.count
+                let lunchSeconds = store.kindSeconds(.lunch, session: session, now: now)
                 let remaining = Double(session.breakLimitMinutes * 60) - elapsed
                 let isNight = Calendar.current.component(.hour, from: session.start) >= 14
                 VStack(alignment: .leading, spacing: 14) {
@@ -297,7 +307,9 @@ struct ShiftReportView: View {
                     reportRow("Тип", isNight ? "Ночная" : "Дневная", "moon.stars.fill")
                     reportRow("Работа", timeString(worked), "briefcase.fill")
                     reportRow("Отдых", timeString(elapsed), "cup.and.saucer.fill")
-                    reportRow("Перекуры", "\(session.breaks.count)", "number")
+                    reportRow("Перекуры", "\(smokeCount)", "cup.and.saucer.fill")
+                    reportRow("Обеды", "\(lunchCount)", "fork.knife")
+                    reportRow("Время обеда", timeString(lunchSeconds), "clock")
                     reportRow("Самый длинный", timeString(longest), "timer")
                     reportRow("Остаток лимита", remaining < 0 ? "Превышение \(timeString(-remaining))" : timeString(remaining), "hourglass")
                     if let end = session.end {
@@ -337,7 +349,8 @@ struct ShiftReportView: View {
                            rested: Double, longest: Double, remaining: Double) -> String {
         "Shiftly · Отчёт за \(ruDate(session.start))\n" +
         "Работа: \(timeString(worked))\n" +
-        "Перекуров: \(session.breaks.count)\n" +
+        "Перекуров: \(session.breaks.filter { $0.type == .smoke }.count)\n" +
+        "Обедов: \(session.breaks.filter { $0.type == .lunch }.count)\n" +
         "Отдых: \(timeString(rested))\n" +
         "Самый длинный: \(timeString(longest))\n" +
         "Остаток лимита: \(timeString(max(0, remaining)))"

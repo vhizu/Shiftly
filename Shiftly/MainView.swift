@@ -45,7 +45,7 @@ struct MoreView: View {
                 VStack(alignment: .leading, spacing: 11) {
                     ShiftlySectionHeader(title: "Журнал и история")
                     NavigationLink { HistoryView() } label: {
-                        ShiftlyMenuRow(symbol: "clock.arrow.circlepath", title: "История", subtitle: "Перекуры и отчёты", accent: accent)
+                        ShiftlyMenuRow(symbol: "clock.arrow.circlepath", title: "История", subtitle: "Перекуры, обеды и отчёты", accent: accent)
                     }
                     NavigationLink { LineJournalView() } label: {
                         ShiftlyMenuRow(symbol: "wrench.adjustable.fill", title: "Журнал линии", subtitle: "Заметки оператора", accent: .orange)
@@ -53,7 +53,7 @@ struct MoreView: View {
                     ShiftlySectionHeader(title: "Отдых")
                         .padding(.top, 8)
                     NavigationLink { BreakHubView() } label: {
-                        ShiftlyMenuRow(symbol: "cup.and.saucer.fill", title: "Центр перекуров", subtitle: "Лимиты, исправления и история", accent: .pink)
+                        ShiftlyMenuRow(symbol: "cup.and.saucer.fill", title: "Центр перерывов", subtitle: "Обед, перекуры и исправления", accent: .pink)
                     }
                     ShiftlySectionHeader(title: "Приложение")
                         .padding(.top, 8)
@@ -92,53 +92,45 @@ func timeString(_ seconds: TimeInterval) -> String {
     return String(format: "%02d:%02d:%02d", n / 3600, (n / 60) % 60, n % 60)
 }
 
-// The operator is a character in the scene, not a rectangular image card.
-// When there is no active shift, omit the old "MascotDone" asset entirely:
-// that source PNG has an opaque white background.
+// Mascot fades into the *full* screen backdrop. No fixed-height dark panels.
 struct HomeMascotBackdrop: View {
     let onBreak: Bool
     let remainingSingle: TimeInterval
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("shiftly.motion") private var motionEnabled = true
     @State private var floating = false
+    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
     private var imageName: String {
         onBreak && remainingSingle > 120 ? "MascotBreak" : "MascotWork"
     }
+    private var shouldAnimate: Bool { motionEnabled && !reduceMotion && !lowPower }
 
     var body: some View {
         GeometryReader { geo in
-            let artWidth = min(geo.size.width * 1.18, 560)
+            let width = min(geo.size.width * 1.28, 560)
             ZStack(alignment: .topTrailing) {
                 Image(imageName)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: artWidth)
-                    .opacity(0.97)
-                    .offset(x: artWidth * 0.18, y: floating ? -6 : 6)
+                    .frame(width: width)
+                    .offset(x: width * 0.15, y: shouldAnimate && floating ? -6 : 4)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .white, location: 0.00),
+                            .init(color: .white, location: 0.55),
+                            .init(color: .white.opacity(0.75), location: 0.70),
+                            .init(color: .clear, location: 0.96)
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-
-                // Keep navigation and white foreground labels legible without
-                // flattening the mascot into a grey opaque panel.
-                LinearGradient(
-                    stops: [
-                        .init(color: .black.opacity(0.46), location: 0),
-                        .init(color: .black.opacity(0.16), location: 0.42),
-                        .init(color: .clear, location: 1)
-                    ], startPoint: .leading, endPoint: .trailing
-                )
-                .frame(height: min(geo.size.height * 0.78, 680))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .clear, location: 0.48),
-                        .init(color: Color(red: 0.04, green: 0.025, blue: 0.09).opacity(0.76), location: 1)
-                    ], startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: min(geo.size.height * 0.78, 680))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // This is full-height and seamless, unlike the old 78% rectangle.
+                LinearGradient(stops: [
+                    .init(color: Color.black.opacity(0.22), location: 0),
+                    .init(color: Color.black.opacity(0.05), location: 0.34),
+                    .init(color: Color.clear, location: 0.65),
+                    .init(color: Color.black.opacity(0.20), location: 1)
+                ], startPoint: .leading, endPoint: .trailing)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
@@ -146,59 +138,67 @@ struct HomeMascotBackdrop: View {
         .ignoresSafeArea(edges: .bottom)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear {
-            guard motionEnabled && !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 3.3).repeatForever(autoreverses: true)) {
-                floating = true
-            }
+        .onAppear { updateMotion() }
+        .onChange(of: motionEnabled) { _, _ in updateMotion() }
+        .onChange(of: reduceMotion) { _, _ in updateMotion() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+            lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+            updateMotion()
+        }
+    }
+
+    private func updateMotion() {
+        if shouldAnimate {
+            withAnimation(.easeInOut(duration: 3.3).repeatForever(autoreverses: true)) { floating = true }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { floating = false }
         }
     }
 }
 
-// Tiny text pill over the hero scene keeps the mascot's reactions, without
-// bringing back a big image card or blocking the timer below it.
 struct HomeMascotMood: View {
-    let onBreak: Bool
-    let remainingSingle: TimeInterval
-    @State private var alternate = false
+    let mood: MascotMood
+    let now: Date
+    @AppStorage("shiftly.talkFrequency") private var talkFrequency = "normal"
+    @State private var taps = 0
 
-    private var message: String {
-        if alternate { return onBreak ? "Я слежу за твоими минутами 💜" : "Держим темп, оператор!" }
-        if !onBreak { return "Смена в деле! 💜" }
-        if remainingSingle <= 0 { return "Время вышло, возвращайся!" }
-        if remainingSingle <= 60 { return "Осталась минутка!" }
-        if remainingSingle <= 300 { return "Допивай кофе, пора обратно" }
-        return "Заслуженный перерыв ☕"
+    private var phrase: String {
+        let interval: Double = talkFrequency == "rare" ? 900 : talkFrequency == "often" ? 120 : 300
+        let bucket = Int(now.timeIntervalSince1970 / interval)
+        // Time-driven phrases are stable between buckets and don't flicker every second.
+        let chosen: MascotMood = (Calendar.current.component(.hour, from: now) == 3 && bucket % 17 == 0) ? .rare : mood
+        return MascotLines.phrase(for: chosen, index: bucket + taps)
     }
 
     var body: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.2)) { alternate.toggle() }
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            taps += 1
+            ShiftlyFeedback.light()
         } label: {
-            Label(message, systemImage: onBreak && remainingSingle <= 60 ? "exclamationmark.circle.fill" : "sparkles")
+            Label(phrase, systemImage: "sparkles")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 9)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(.white.opacity(0.20), lineWidth: 0.7))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Операторша. " + message)
+        .accessibilityLabel("Операторша. " + phrase)
     }
 }
 
-
 struct HomeView: View {
-    @EnvironmentObject var store: ShiftStore
-    @AppStorage("shiftly.compactHome") private var compact = false
+    @EnvironmentObject private var store: ShiftStore
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     @State private var showQuickPastBreak = false
     @State private var showFocus = false
     @State private var confirmEnd = false
+    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     private var palette: ShiftlyPalette { ShiftlyPalette(rawValue: themeName) ?? .violet }
     private var recentSession: WorkSession? {
         store.current ?? store.data.sessions.max(by: { $0.start < $1.start })
@@ -206,164 +206,260 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let now = context.date
+            TimelineView(.periodic(from: .now, by: lowPower ? 5 : 1)) { tick in
+                let now = tick.date
                 let session = store.current
-                let active = session?.breaks.last(where: { $0.end == nil })
-                let singleRemaining = active.map { Double(store.perBreakLimitMinutes * 60) - now.timeIntervalSince($0.start) }
-                    ?? Double(store.perBreakLimitMinutes * 60)
+                let active = store.activeBreak
+                let activeLimit = active?.type == .lunch ? 30 : store.perBreakLimitMinutes
+                let singleRemaining = active.map { Double(activeLimit * 60) - now.timeIntervalSince($0.start) }
+                    ?? Double(activeLimit * 60)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 13) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(session == nil ? "ВЫХОДНОЙ" : store.isOnBreak ? "ВРЕМЯ ОТДЫХА" : "ТВОЯ СМЕНА")
-                                    .font(.caption2.bold()).tracking(1.6).foregroundStyle(palette.accent)
-                                Text(session == nil ? "Отдыхай 💜" : store.isOnBreak ? "Перекур" : "Всё под контролем")
-                                    .font(.system(size: 27, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                            }
-                            Spacer()
-                            Button { withAnimation(.easeInOut(duration: 0.2)) { compact.toggle() } } label: {
-                                Image(systemName: compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
-                                    .font(.subheadline.bold()).foregroundStyle(.white)
-                                    .frame(width: 42, height: 42).shiftlyGlassControl(radius: 14)
-                            }
-                            .accessibilityLabel(compact ? "Расширенный интерфейс" : "Компактный интерфейс")
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(session == nil ? "ВЫХОДНОЙ" : active?.type == .lunch ? "ВРЕМЯ ОБЕДА" : active == nil ? "ТВОЯ СМЕНА" : "ВРЕМЯ ОТДЫХА")
+                                .font(.caption2.bold()).tracking(1.6).foregroundStyle(palette.accent)
+                            Text(session == nil ? "Отдыхай 💜" : active?.type == .lunch ? "Приятного аппетита" : active == nil ? "Всё под контролем" : "Перекур")
+                                .font(.system(size: 27, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
                         }
-
-                        // A little clear breathing room keeps the full-size
-                        // character visible behind the glass; no separate card.
-                        if session != nil {
-                            Color.clear
-                                .frame(height: compact ? 72 : 112)
-                                .overlay(alignment: .bottomLeading) {
-                                    HomeMascotMood(onBreak: store.isOnBreak,
-                                                   remainingSingle: singleRemaining)
-                                }
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         if let session {
-                            let spent = store.breakSeconds(session, now: now)
-                            let totalRemaining = Double(session.breakLimitMinutes * 60) - spent
                             let untilEnd = max(0, (session.end ?? session.start.addingTimeInterval(12 * 3600)).timeIntervalSince(now))
-                            VStack(alignment: .leading, spacing: 13) {
-                                HStack {
-                                    Label(store.isOnBreak ? "Перекур активен" : "Смена идёт", systemImage: store.isOnBreak ? "cup.and.saucer.fill" : "briefcase.fill")
-                                        .font(.subheadline.bold()).foregroundStyle(palette.accent)
-                                    Spacer()
-                                    Text("С " + ruDate(session.start)).font(.caption2)
-                                        .foregroundStyle(Color.white.opacity(0.76)).lineLimit(1).minimumScaleFactor(0.65)
+                            let remaining = Double(session.breakLimitMinutes * 60) - store.breakSeconds(session, now: now)
+                            Color.clear.frame(height: 96)
+                                .overlay(alignment: .bottomLeading) {
+                                    HomeMascotMood(mood: mood(session: session, active: active, singleRemaining: singleRemaining, remaining: remaining, untilEnd: untilEnd, now: now), now: now)
                                 }
-                                HStack(spacing: 10) {
-                                    ShiftRing(remaining: store.isOnBreak ? singleRemaining : untilEnd,
-                                              total: store.isOnBreak ? Double(store.perBreakLimitMinutes * 60) : 12 * 3600,
-                                              subtitle: store.isOnBreak ? "ТЕКУЩИЙ ПЕРЕКУР" : "ДО КОНЦА СМЕНЫ", compact: true)
-                                        .frame(maxWidth: .infinity)
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        Text("ОСТАТОК ОТДЫХА").font(.caption2.bold()).tracking(0.8)
-                                            .foregroundStyle(Color.white.opacity(0.75))
-                                        Text(timeString(max(0, totalRemaining)))
-                                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                                            .foregroundStyle(.white).monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
-                                        ProgressView(value: min(1, max(0, totalRemaining / Double(max(1, session.breakLimitMinutes * 60)))))
-                                            .tint(totalRemaining < 300 ? .orange : palette.accent)
-                                        Text("До конца смены: " + timeString(untilEnd))
-                                            .font(.caption).foregroundStyle(Color.white.opacity(0.76))
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                HStack(spacing: 10) {
-                                    ShiftlyStatChip(symbol: "briefcase.fill", title: "Работа", value: timeString(store.workSeconds(session, now: now)))
-                                    ShiftlyStatChip(symbol: "cup.and.saucer.fill", title: "Отдых", value: timeString(spent))
-                                }
-                                Text(RestForecast.message(remaining: totalRemaining, minutesPerBreak: store.perBreakLimitMinutes,
-                                                          untilShiftEnd: untilEnd, active: store.isOnBreak))
-                                    .font(.caption).foregroundStyle(Color.white.opacity(0.76))
-                                if totalRemaining < 0 {
-                                    Label("Превышен лимит: " + timeString(-totalRemaining), systemImage: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.orange).font(.caption.bold())
-                                }
-                            }
-                            .padding(16)
-                            .shiftlyGlass(radius: 24, emphasis: true)
-
-                            Button { store.toggleBreak(); UIImpactFeedbackGenerator(style: .medium).impactOccurred() } label: {
-                                Label(store.isOnBreak ? "Вернулся к работе" : "Начать перекур",
-                                      systemImage: store.isOnBreak ? "checkmark.circle.fill" : "cup.and.saucer.fill")
-                            }
-                            .buttonStyle(ShiftlyPrimaryButtonStyle())
-
-                            LazyVGrid(columns: [
-                                GridItem(.flexible(), spacing: 11),
-                                GridItem(.flexible(), spacing: 11)
-                            ], spacing: 11) {
-                                Button { showQuickPastBreak = true } label: {
-                                    Label("Забытый перекур", systemImage: "clock.arrow.circlepath")
-                                        .font(.caption.weight(.semibold))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                        .frame(maxWidth: .infinity)
-                                        .frame(height: 64)
-                                        .shiftlyGlassControl(radius: 18)
-                                }
-                                Button { showFocus = true } label: {
-                                    Label("Фокус", systemImage: "scope")
-                                        .font(.caption.weight(.semibold))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                        .frame(maxWidth: .infinity)
-                                        .frame(height: 64)
-                                        .shiftlyGlassControl(radius: 18)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.white)
-                            if !compact {
-                                Button("Завершить смену", role: .destructive) { confirmEnd = true }
-                                    .font(.caption).frame(maxWidth: .infinity).padding(.top, 4)
-                            }
+                            activeCard(session: session, now: now, active: active,
+                                       singleRemaining: singleRemaining, totalRemaining: remaining, untilEnd: untilEnd)
+                            actionButtons(active: active)
                         } else {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Сегодня нет активной смены").font(.headline).foregroundStyle(.white)
-                                Text("График отслеживается автоматически. Внеплановую смену можно запустить вручную.")
-                                    .font(.subheadline).foregroundStyle(Color.white.opacity(0.74))
-                                Button("Начать внеплановую смену") { store.startWork() }
-                                    .buttonStyle(ShiftlyPrimaryButtonStyle())
-                            }.padding(17).shiftlyGlass(radius: 22)
+                            idleContent(now: now)
+                        }
+
+                        if let action = store.undoAction, now < action.expiresAt {
+                            HStack(spacing: 9) {
+                                Label(action.label, systemImage: "checkmark.circle.fill")
+                                    .font(.caption.bold()).foregroundStyle(.white)
+                                Spacer(minLength: 2)
+                                Button("Отменить") {
+                                    if store.undoLastBreakAction() { ShiftlyFeedback.success() }
+                                }
+                                .font(.caption.bold())
+                                .buttonStyle(.bordered)
+                                .tint(palette.accent)
+                            }
+                            .padding(11)
+                            .shiftlyGlass(radius: 16)
+                        }
+                        if let error = store.persistenceWarning {
+                            Label(error, systemImage: "externaldrive.badge.exclamationmark")
+                                .font(.caption).foregroundStyle(.orange)
                         }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
                 .background {
-                    ZStack(alignment: .top) {
+                    ZStack {
                         ShiftlyBackdrop()
-                        // The idle screen intentionally has *no* mascot image;
-                        // MascotDone.png had an opaque white background.
                         if session != nil {
-                            HomeMascotBackdrop(onBreak: store.isOnBreak,
-                                               remainingSingle: singleRemaining)
+                            HomeMascotBackdrop(onBreak: active != nil, remainingSingle: singleRemaining)
                         }
                     }
                 }
             }
             .navigationTitle("Shiftly")
             .navigationBarTitleDisplayMode(.inline)
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                store.synchronize()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+                lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+            }
             .sheet(isPresented: $showFocus) { ShiftlyFocusView() }
             .sheet(isPresented: $showQuickPastBreak) {
                 if let session = recentSession { QuickPastBreakEditor(sessionID: session.id) }
                 else { NavigationStack { BreakHubView() } }
             }
             .confirmationDialog("Завершить смену?", isPresented: $confirmEnd) {
-                Button("Завершить смену", role: .destructive) { store.endWork() }
+                Button("Завершить смену", role: .destructive) { store.endWork(); ShiftlyFeedback.success() }
                 Button("Отмена", role: .cancel) { }
-            } message: { Text("Это закроет текущую смену и остановит перекур.") }
+            } message: {
+                Text("Это закроет текущую смену и остановит активный перерыв.")
+            }
+        }
+    }
+
+    private func mood(session: WorkSession, active: BreakSession?, singleRemaining: TimeInterval,
+                      remaining: TimeInterval, untilEnd: TimeInterval, now: Date) -> MascotMood {
+        if remaining <= 300 { return .warning }
+        if let active {
+            if active.type == .lunch { return singleRemaining <= 300 ? .lunchLate : .lunch }
+            return singleRemaining <= 180 ? .smokeLate : .smoke
+        }
+        if untilEnd <= 3600 { return .finalHour }
+        if untilEnd <= 6 * 3600 { return .halfway }
+        return Calendar.current.component(.hour, from: session.start) >= 14 ? .night : .day
+    }
+
+    private func activeCard(session: WorkSession, now: Date, active: BreakSession?,
+                            singleRemaining: TimeInterval, totalRemaining: TimeInterval,
+                            untilEnd: TimeInterval) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Label(active?.type == .lunch ? "Обед идёт" : active == nil ? "Смена идёт" : "Перекур активен",
+                      systemImage: active?.type == .lunch ? "fork.knife" : active == nil ? "briefcase.fill" : "cup.and.saucer.fill")
+                    .font(.subheadline.bold()).foregroundStyle(palette.accent)
+                Spacer(minLength: 4)
+                Text("С " + ruDate(session.start))
+                    .font(.caption2).foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1).minimumScaleFactor(0.65)
+            }
+            HStack(spacing: 10) {
+                ShiftRing(remaining: active == nil ? untilEnd : singleRemaining,
+                          total: active == nil ? 12 * 3600 : Double((active!.type == .lunch ? 30 : store.perBreakLimitMinutes) * 60),
+                          subtitle: active == nil ? "ДО КОНЦА СМЕНЫ" : active!.type == .lunch ? "ОБЕД · 30 МИН" : "ПЕРЕКУР",
+                          compact: true)
+                    .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("ОСТАТОК ОТДЫХА")
+                        .font(.caption2.bold()).tracking(0.6).foregroundStyle(.white.opacity(0.72))
+                    Text(timeString(max(0, totalRemaining)))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white).monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
+                    ProgressView(value: min(1, max(0, totalRemaining / Double(max(1, session.breakLimitMinutes * 60)))))
+                        .tint(totalRemaining < 300 ? .orange : palette.accent)
+                    Text("Обед и перекуры входят в один лимит")
+                        .font(.caption2).foregroundStyle(.white.opacity(0.68))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 10) {
+                ShiftlyStatChip(symbol: "briefcase.fill", title: "Работа", value: timeString(store.workSeconds(session, now: now)))
+                ShiftlyStatChip(symbol: "cup.and.saucer.fill", title: "Отдых", value: timeString(store.breakSeconds(session, now: now)))
+            }
+            if totalRemaining < 0 {
+                Label("Лимит превышен на " + timeString(-totalRemaining), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.bold()).foregroundStyle(.orange)
+            } else if active == nil {
+                Text(RestForecast.message(remaining: totalRemaining, minutesPerBreak: store.perBreakLimitMinutes,
+                                          untilShiftEnd: untilEnd, active: false))
+                    .font(.caption).foregroundStyle(.white.opacity(0.72))
+            }
+        }
+        .padding(16)
+        .shiftlyGlass(radius: 24, emphasis: true)
+    }
+
+    private func actionButtons(active: BreakSession?) -> some View {
+        VStack(spacing: 10) {
+            if let active {
+                Button {
+                    store.finishBreak()
+                    ShiftlyFeedback.success()
+                } label: {
+                    Label(active.type == .lunch ? "Завершить обед" : "Вернулся к работе",
+                          systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(ShiftlyPrimaryButtonStyle())
+            } else {
+                Button {
+                    store.startBreak(kind: .smoke)
+                    ShiftlyFeedback.medium()
+                } label: {
+                    Label("Начать перекур · 15 мин", systemImage: "cup.and.saucer.fill")
+                }
+                .buttonStyle(ShiftlyPrimaryButtonStyle())
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 11), GridItem(.flexible(), spacing: 11)], spacing: 11) {
+                if active == nil {
+                    Button {
+                        store.startBreak(kind: .lunch)
+                        ShiftlyFeedback.medium()
+                    } label: { Label("Обед · 30 мин", systemImage: "fork.knife")
+                        .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18) }
+                }
+                Button { showQuickPastBreak = true; ShiftlyFeedback.light() } label: {
+                    Label("Забытый перерыв", systemImage: "clock.arrow.circlepath")
+                        .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18)
+                }
+                Button { showFocus = true; ShiftlyFeedback.light() } label: {
+                    Label("Фокус", systemImage: "scope")
+                        .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18)
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.70)
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            Button { confirmEnd = true; ShiftlyFeedback.warning() } label: {
+                Label("Завершить смену", systemImage: "flag.checkered")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.80))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .shiftlyGlassControl(radius: 16)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func idleContent(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            if let next = store.nextScheduledShift(after: now) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Следующая смена", systemImage: "calendar.badge.clock")
+                        .font(.headline).foregroundStyle(palette.accent)
+                    Text(ruDate(next.interval.start))
+                        .font(.title3.bold()).foregroundStyle(.white)
+                    let seconds = max(0, next.interval.start.timeIntervalSince(now))
+                    Text("Через \(Int(seconds / 86400)) д \(Int(seconds.truncatingRemainder(dividingBy: 86400) / 3600)) ч · \(next.extra ? "Подработка" : "По графику")")
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.73))
+                }
+                .padding(17).shiftlyGlass(radius: 22)
+            }
+            if let last = store.data.sessions.filter({ $0.end != nil && $0.end! <= now })
+                .max(by: { $0.end! < $1.end! }),
+               let ended = last.end, now.timeIntervalSince(ended) < 48 * 3600 {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Смена завершена", systemImage: "checkmark.seal.fill")
+                        .font(.headline).foregroundStyle(palette.accent)
+                    HStack(spacing: 11) {
+                        ShiftlyStatChip(symbol: "briefcase.fill", title: "Работал", value: timeString(store.workSeconds(last)))
+                        ShiftlyStatChip(symbol: "cup.and.saucer.fill", title: "Отдых", value: timeString(store.breakSeconds(last)))
+                    }
+                    HStack {
+                        Label("Перекуров: \(last.breaks.filter { $0.type == .smoke }.count)", systemImage: "cup.and.saucer")
+                        Spacer()
+                        Label("Обедов: \(last.breaks.filter { $0.type == .lunch }.count)", systemImage: "fork.knife")
+                    }
+                    .font(.caption).foregroundStyle(.white.opacity(0.82))
+                    NavigationLink {
+                        ShiftReportView(sessionID: last.id)
+                    } label: {
+                        Label("Подробный отчёт", systemImage: "doc.text.magnifyingglass")
+                            .font(.subheadline.bold())
+                    }
+                }
+                .padding(16).shiftlyGlass(radius: 22)
+            } else {
+                Text("Сегодня нет активной смены. Можно отдыхать 💜")
+                    .font(.subheadline).foregroundStyle(.white.opacity(0.76))
+                    .padding(17).shiftlyGlass(radius: 22)
+            }
+            HomeMascotMood(mood: .idle, now: now)
+            Button("Начать внеплановую смену") { store.startWork(); ShiftlyFeedback.medium() }
+                .buttonStyle(ShiftlyPrimaryButtonStyle())
         }
     }
 }
-
 
 struct StatsView: View {
     @EnvironmentObject var store: ShiftStore
@@ -376,7 +472,10 @@ struct StatsView: View {
                 let hours = sessions.reduce(0.0) { $0 + store.workSeconds($1) } / 3600
                 let rested = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
                 let allBreaks = sessions.flatMap(\.breaks)
-                let average = allBreaks.isEmpty ? 0 : Int(rested / Double(allBreaks.count) / 60)
+                let smokes = allBreaks.filter { $0.type == .smoke }
+                let lunches = allBreaks.filter { $0.type == .lunch }
+                let smokeSeconds = smokes.reduce(0.0) { $0 + $1.seconds(asOf: Date()) }
+                let average = smokes.isEmpty ? 0 : Int(smokeSeconds / Double(smokes.count) / 60)
                 let within = completed.filter { store.breakSeconds($0) <= Double($0.breakLimitMinutes * 60) }.count
                 let day = sessions.filter { Calendar.current.component(.hour, from: $0.start) < 14 }
                 let night = sessions.filter { Calendar.current.component(.hour, from: $0.start) >= 14 }
@@ -393,9 +492,10 @@ struct StatsView: View {
                         stat("Отработано", String(format: "%.1f ч", hours), "briefcase.fill")
                         stat("Отдых", String(format: "%.1f ч", rested / 3600), "cup.and.saucer.fill")
                         stat("Средний перекур", "\(average) мин", "timer")
-                        stat("Количество", "\(allBreaks.count)", "number")
+                        stat("Перекуров", "\(smokes.count)", "cup.and.saucer.fill")
+                        stat("Обедов", "\(lunches.count)", "fork.knife")
                     }
-                    ShiftlySectionHeader(title: "Перекуры за неделю")
+                    ShiftlySectionHeader(title: "Перерывы за неделю")
                     ShiftlyWeekBars(sessions: store.data.sessions)
                     ShiftlySectionHeader(title: "День и ночь")
                     comparison("Дневные", sessions: day, color: .green)
@@ -654,7 +754,9 @@ struct SettingsView: View {
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     @AppStorage("shiftly.motion") private var motionEnabled = true
     @AppStorage("shiftly.neonNight") private var neonNight = true
-    @AppStorage("shiftly.compactHome") private var compactHome = false
+    @AppStorage("shiftly.haptics") private var haptics = true
+    @AppStorage("shiftly.autoAtmosphere") private var autoAtmosphere = true
+    @AppStorage("shiftly.talkFrequency") private var talkFrequency = "normal"
     var body: some View {
             Form {
                 Section("Лимит на новую смену") {
@@ -668,6 +770,11 @@ struct SettingsView: View {
                         ForEach([5, 10, 15, 20, 30], id: \.self) { Text("\($0) мин").tag($0) }
                     }
                     Text("По умолчанию 15 минут. Отдельно от общего лимита смены.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Обед") {
+                    Label("Обед — 30 минут", systemImage: "fork.knife")
+                    Text("Обед учитывается внутри общего лимита 120/150 минут вместе с перекурами. В истории обеды отмечены отдельно.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("График") {
@@ -699,7 +806,9 @@ struct SettingsView: View {
                     }
                     Toggle("Неоновый ночной градиент", isOn: $neonNight)
                     Toggle("Плавные анимации", isOn: $motionEnabled)
-                    Toggle("Компактная главная панель", isOn: $compactHome)
+                    Toggle("Автоматическая атмосфера дня и ночи", isOn: $autoAtmosphere)
+                    Text("При энергосбережении и системном уменьшении движения анимации приостанавливаются.")
+                        .font(.caption).foregroundStyle(.secondary)
                     if #available(iOS 26.0, *) {
                         Text("Настоящий Liquid Glass доступен на этом iPhone")
                             .font(.caption).foregroundStyle(.secondary)
@@ -707,6 +816,16 @@ struct SettingsView: View {
                         Text("На этой версии iOS используется полупрозрачный стиль с системным материалом")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                Section("Операторша 💜") {
+                    Picker("Частота реплик", selection: $talkFrequency) {
+                        Text("Редко").tag("rare")
+                        Text("Обычно").tag("normal")
+                        Text("Часто").tag("often")
+                    }
+                    Toggle("Тактильная отдача", isOn: $haptics)
+                    Text("144 офлайн-реплики. Нажми на подпись операторши, чтобы услышать другую. Без лишних push-уведомлений.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Dynamic Island · диагностика") {
                     Text("Разрешены системой: \(live.enabled ? "да" : "нет")")
@@ -882,16 +1001,16 @@ struct SessionEditor: View {
                         store.editSession(sessionID, start: start, end: hasEnd ? end : nil)
                     }.disabled(hasEnd && end <= start)
                 }
-                Section("Перекуры") {
+                Section("Перерывы") {
                     Button { addingPastBreak = true } label: {
-                        Label("Добавить забытый перекур", systemImage: "plus.circle.fill")
+                        Label("Добавить забытый перерыв", systemImage: "plus.circle.fill")
                     }
                     ForEach(session.breaks) { item in
                         NavigationLink {
                             BreakEditor(sessionID: sessionID, item: item)
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(item.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU"))))
+                                Text(item.type.title + " · " + item.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU"))))
                                 Text(item.end?.formatted(date: .omitted, time: .shortened) ?? "Идёт")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
@@ -915,11 +1034,16 @@ struct PastBreakEditor: View {
     let sessionID: UUID
     @State private var start = Date().addingTimeInterval(-15 * 60)
     @State private var end = Date()
+    @State private var kind: BreakKind = .smoke
     @State private var errorMessage: String?
     var body: some View {
         NavigationStack {
             Form {
-                Section("Забытый перекур") {
+                Section("Забытый перерыв") {
+                    Picker("Тип", selection: $kind) {
+                        Text("Перекур · 15 мин").tag(BreakKind.smoke)
+                        Text("Обед · 30 мин").tag(BreakKind.lunch)
+                    }
                     DatePicker("Начало", selection: $start, displayedComponents: [.date, .hourAndMinute])
                     DatePicker("Конец", selection: $end, displayedComponents: [.date, .hourAndMinute])
                     Text("Перекур добавится в историю смены и будет учтён в лимите. Таймер и уведомление не запускаются.")
@@ -929,15 +1053,15 @@ struct PastBreakEditor: View {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
                 Section {
-                    Button("Добавить перекур") {
-                        if let error = store.addPastBreak(sessionID: sessionID, start: start, end: end) {
+                    Button("Добавить перерыв") {
+                        if let error = store.addPastBreak(sessionID: sessionID, start: start, end: end, kind: kind) {
                             errorMessage = error
                         } else { dismiss() }
                     }
                     .disabled(end <= start || end > Date())
                 }
             }
-            .scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Добавить перекур")
+            .scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Добавить перерыв")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -958,17 +1082,22 @@ struct BreakEditor: View {
     @State private var ready = false
     @State private var errorMessage: String?
     @State private var confirmDelete = false
+    @State private var kind: BreakKind = .smoke
     var body: some View {
         Form {
+            Picker("Тип перерыва", selection: $kind) {
+                Text("Перекур").tag(BreakKind.smoke)
+                Text("Обед").tag(BreakKind.lunch)
+            }
             DatePicker("Начало", selection: $start)
             DatePicker("Конец", selection: $end)
             if let errorMessage { Text(errorMessage).foregroundStyle(.red).font(.caption) }
             Button("Сохранить") {
-                if let error = store.editBreak(sessionID: sessionID, breakID: item.id, start: start, end: end) {
+                if let error = store.editBreak(sessionID: sessionID, breakID: item.id, start: start, end: end, kind: kind) {
                     errorMessage = error
                 } else { dismiss() }
             }.disabled(end <= start || end > Date())
-            Button("Удалить перекур", role: .destructive) { confirmDelete = true }
+            Button("Удалить перерыв", role: .destructive) { confirmDelete = true }
                 .confirmationDialog("Удалить эту запись?", isPresented: $confirmDelete) {
                     Button("Удалить", role: .destructive) {
                         store.removeBreak(sessionID: sessionID, breakID: item.id)
@@ -976,8 +1105,8 @@ struct BreakEditor: View {
                     }
                 }
         }
-        .scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Исправить перекур")
-        .onAppear { if !ready { start = item.start; end = item.end ?? Date(); ready = true } }
+        .scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Исправить перерыв")
+        .onAppear { if !ready { start = item.start; end = item.end ?? Date(); kind = item.type; ready = true } }
     }
 }
 

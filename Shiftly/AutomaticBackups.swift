@@ -65,18 +65,35 @@ enum AutomaticBackups {
         }
     }
 
-    static func save(_ data: ShiftData) {
-        guard let folder = directory, let encoded = try? JSONEncoder().encode(data) else { return }
-        // Last local copy is updated after every state change.
-        try? encoded.write(to: folder.appendingPathComponent("Shiftly-latest.json"), options: .atomic)
-        let now = Date()
-        let recent = snapshots().first.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
-        guard recent == nil || now.timeIntervalSince(recent!) >= 15 * 60 else { return }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let url = folder.appendingPathComponent("Shiftly-auto-\(formatter.string(from: now)).json")
-        try? encoded.write(to: url, options: .atomic)
-        for old in snapshots().dropFirst(20) { try? FileManager.default.removeItem(at: old) }
+    static func loadLatest() -> ShiftData? {
+        guard let file = latestFile(),
+              let raw = try? Data(contentsOf: file),
+              let decoded = try? JSONDecoder().decode(ShiftData.self, from: raw),
+              decoded.limitMinutes > 0,
+              decoded.sessions.allSatisfy({ $0.end == nil || $0.end! >= $0.start }) else { return nil }
+        return decoded
+    }
+
+    // The latest atomic file is saved on EVERY change; rolling snapshots
+    // remain throttled to 15 minutes to avoid excessive writes.
+    @discardableResult
+    static func save(_ data: ShiftData) -> Bool {
+        guard let folder = directory, let encoded = try? JSONEncoder().encode(data) else { return false }
+        do {
+            try encoded.write(to: folder.appendingPathComponent("Shiftly-latest.json"), options: .atomic)
+            let now = Date()
+            let recent = snapshots().first.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
+            if recent == nil || now.timeIntervalSince(recent!) >= 15 * 60 {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.dateFormat = "yyyyMMdd-HHmmss"
+                let url = folder.appendingPathComponent("Shiftly-auto-\(formatter.string(from: now)).json")
+                try encoded.write(to: url, options: .atomic)
+                for old in snapshots().dropFirst(20) { try? FileManager.default.removeItem(at: old) }
+            }
+            return true
+        } catch {
+            return false
+        }
     }
 }

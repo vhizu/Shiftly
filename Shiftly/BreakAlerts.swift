@@ -16,11 +16,12 @@ enum BreakAlerts {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
     static func start(remainingSeconds: TimeInterval, limitSeconds: TimeInterval,
-                      singleBreakSeconds: TimeInterval = 15 * 60, breakStartedAt: Date = Date()) {
+                      singleBreakSeconds: TimeInterval = 15 * 60, breakStartedAt: Date = Date(),
+                      kind: BreakKind = .smoke) {
         let elapsed = max(0, Date().timeIntervalSince(breakStartedAt))
         let totalRemaining = max(0, remainingSeconds - elapsed)
         let singleRemaining = max(0, singleBreakSeconds - elapsed)
-        BreakNoticeScheduler.start(totalRemaining: totalRemaining, singleRemaining: singleRemaining)
+        BreakNoticeScheduler.start(totalRemaining: totalRemaining, singleRemaining: singleRemaining, kind: kind)
         Task { @MainActor in
             // Stop old activities BEFORE starting the new one, avoiding the previous start/stop race.
             for activity in Activity<ShiftlyBreakAttributes>.activities {
@@ -36,7 +37,8 @@ enum BreakAlerts {
                 deadline: now.addingTimeInterval(singleRemaining),
                 totalDeadline: now.addingTimeInterval(totalRemaining),
                 limitSeconds: limitSeconds,
-                usedSeconds: max(0, limitSeconds - totalRemaining))
+                usedSeconds: max(0, limitSeconds - totalRemaining),
+                kind: kind)
             do {
                 let activity = try Activity<ShiftlyBreakAttributes>.request(
                     attributes: attributes,

@@ -10,6 +10,8 @@ struct ShiftlyBreakAttributes: ActivityAttributes {
         var totalDeadline: Date        // Remaining overall rest budget
         var limitSeconds: Double
         var usedSeconds: Double
+        var kind: BreakKind? = nil
+        var breakType: BreakKind { kind ?? .smoke }
     }
     var startedAt: Date
 }
@@ -62,7 +64,7 @@ struct StartBreakIntent: AppIntent {
               var snapshot = try? JSONDecoder().decode(ShiftData.self, from: raw),
               let i = snapshot.sessions.lastIndex(where: { $0.start <= now && ($0.end == nil || $0.end! > now) }),
               !snapshot.sessions[i].breaks.contains(where: { $0.end == nil }) else { return .result() }
-        snapshot.sessions[i].breaks.append(BreakSession(start: now))
+        snapshot.sessions[i].breaks.append(BreakSession(start: now, kind: .smoke))
         if let encoded = try? JSONEncoder().encode(snapshot) {
             defaults.set(encoded, forKey: ShiftlyShared.dataKey)
             defaults.set(now.timeIntervalSince1970, forKey: ShiftlyShared.startRequestKey)

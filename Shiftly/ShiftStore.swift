@@ -3,18 +3,38 @@ import UserNotifications
 import ActivityKit
 import WidgetKit
 
+struct ShiftlyUndoAction: Identifiable {
+    enum Operation { case started, finished }
+    let id = UUID()
+    let sessionID: UUID
+    let breakID: UUID
+    let operation: Operation
+    let kind: BreakKind
+    let issuedAt: Date
+    let label: String
+    var expiresAt: Date { issuedAt.addingTimeInterval(20) }
+}
+
 @MainActor final class ShiftStore: ObservableObject {
     @Published private(set) var data = ShiftData()
+    @Published private(set) var undoAction: ShiftlyUndoAction?
+    @Published private(set) var persistenceWarning: String?
     private let key = ShiftlyShared.dataKey
     init() {
         if let raw = UserDefaults.standard.data(forKey: key), let decoded = try? JSONDecoder().decode(ShiftData.self, from: raw) { data = decoded }
         if let shared = ShiftlyShared.defaults.data(forKey: key), let decoded = try? JSONDecoder().decode(ShiftData.self, from: shared) {
             if decoded.sessions.count >= data.sessions.count { data = decoded }
         }
+        let localReadable = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(ShiftData.self, from: $0) } != nil
+        let sharedReadable = ShiftlyShared.defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(ShiftData.self, from: $0) } != nil
+        if !localReadable && !sharedReadable,
+           let previous = AutomaticBackups.loadLatest() { data = previous }
         // Recreate the scheduled shift from its real start time after reinstall.
         // No need to press "Start shift" at the time the app is first opened.
         synchronize(now: Date())
-        AutomaticBackups.save(data)
+        if !AutomaticBackups.save(data) {
+            persistenceWarning = "Не получилось обновить локальную резервную копию"
+        }
         ShiftReminders.schedule(store: self)
     }
     var current: WorkSession? {
@@ -73,8 +93,9 @@ import WidgetKit
         let remaining = max(0, Double(session.breakLimitMinutes * 60) - breakSeconds(session, now: startedAt))
         BreakAlerts.start(remainingSeconds: remaining,
                           limitSeconds: Double(session.breakLimitMinutes * 60),
-                          singleBreakSeconds: Double(perBreakLimitMinutes * 60),
-                          breakStartedAt: startedAt)
+                          singleBreakSeconds: Double(((session.breaks.last(where: { abs($0.start.timeIntervalSince(startedAt)) < 3 })?.type == .lunch) ? 30 : perBreakLimitMinutes) * 60),
+                          breakStartedAt: startedAt,
+                          kind: session.breaks.last(where: { abs($0.start.timeIntervalSince(startedAt)) < 3 })?.type ?? .smoke)
     }
     private func applyExternalBreakEnd() {
         let defaults = ShiftlyShared.defaults
@@ -92,9 +113,18 @@ import WidgetKit
     private func ensureSession(start: Date, end: Date, now: Date) {
         guard start <= now else { return }
         if let i = data.sessions.firstIndex(where: { abs($0.start.timeIntervalSince(start)) < 60 }) {
-            if data.sessions[i].isAutomatic == true && data.sessions[i].end != (now >= end ? end : nil) {
-                data.sessions[i].end = now >= end ? end : nil
-                save()
+            if data.sessions[i].isAutomatic == true {
+                let expectedEnd: Date? = now >= end ? end : nil
+                var changed = data.sessions[i].end != expectedEnd
+                if now >= end, let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) {
+                    // A night shift can finish while the app is closed.
+                    data.sessions[i].breaks[j].end = end
+                    changed = true
+                }
+                if changed {
+                    data.sessions[i].end = expectedEnd
+                    save()
+                }
             }
             return
         }
@@ -115,7 +145,7 @@ import WidgetKit
         data.notes?[i] = note
         save()
     }
-    func editBreak(sessionID: UUID, breakID: UUID, start: Date, end: Date) -> String? {
+    func editBreak(sessionID: UUID, breakID: UUID, start: Date, end: Date, kind: BreakKind? = nil) -> String? {
         guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }),
               let j = data.sessions[i].breaks.firstIndex(where: { $0.id == breakID }) else { return "Перекур не найден" }
         let session = data.sessions[i]
@@ -130,6 +160,7 @@ import WidgetKit
         let wasActive = data.sessions[i].breaks[j].end == nil
         data.sessions[i].breaks[j].start = start
         data.sessions[i].breaks[j].end = end
+        if let kind { data.sessions[i].breaks[j].kind = kind }
         data.sessions[i].breaks.sort { $0.start < $1.start }
         save()
         if wasActive { BreakAlerts.stop() }
@@ -144,7 +175,7 @@ import WidgetKit
         if wasActive { BreakAlerts.stop() }
     }
     // Record a completed break retrospectively without starting a Live Activity.
-    func addPastBreak(sessionID: UUID, start: Date, end: Date) -> String? {
+    func addPastBreak(sessionID: UUID, start: Date, end: Date, kind: BreakKind = .smoke) -> String? {
         let now = Date()
         guard let i = data.sessions.firstIndex(where: { $0.id == sessionID }) else { return "Смена не найдена" }
         let session = data.sessions[i]
@@ -156,7 +187,7 @@ import WidgetKit
             let existingEnd = existing.end ?? now
             return start < existingEnd && end > existing.start
         }) else { return "Это время пересекается с другим перекуром" }
-        data.sessions[i].breaks.append(BreakSession(start: start, end: end))
+        data.sessions[i].breaks.append(BreakSession(start: start, end: end, kind: kind))
         data.sessions[i].breaks.sort { $0.start < $1.start }
         save()
         return nil
@@ -181,14 +212,15 @@ import WidgetKit
         }) else { return "Перерыв пересекается с другим перекуром" }
         let spentBefore = breakSeconds(session, now: startedAt)
         let remainingAtStart = max(0, Double(session.breakLimitMinutes * 60) - spentBefore)
-        data.sessions[i].breaks.append(BreakSession(start: startedAt))
+        data.sessions[i].breaks.append(BreakSession(start: startedAt, kind: .smoke))
         data.sessions[i].breaks.sort { $0.start < $1.start }
         save()
         BreakAlerts.requestPermission()
         BreakAlerts.start(remainingSeconds: remainingAtStart,
                           limitSeconds: Double(session.breakLimitMinutes * 60),
                           singleBreakSeconds: Double(perBreakLimitMinutes * 60),
-                          breakStartedAt: startedAt)
+                          breakStartedAt: startedAt,
+                          kind: .smoke)
         return nil
     }
 
@@ -211,25 +243,106 @@ import WidgetKit
 
     func replaceData(_ replacement: ShiftData) { data = replacement; save(); synchronize() }
 
-    var isOnBreak: Bool { current?.breaks.last?.end == nil && current?.breaks.last != nil }
+    var activeBreak: BreakSession? { current?.breaks.last(where: { $0.end == nil }) }
+    var isOnBreak: Bool { activeBreak != nil }
+    var isOnLunch: Bool { activeBreak?.type == .lunch }
+    func kindSeconds(_ kind: BreakKind, session: WorkSession, now: Date = Date()) -> TimeInterval {
+        session.breaks.filter { $0.type == kind }.reduce(0) {
+            $0 + max(0, ($1.end ?? min(now, session.end ?? now)).timeIntervalSince($1.start))
+        }
+    }
+    func persistNow() { save() }
     func breakSeconds(_ session: WorkSession, now: Date = Date()) -> TimeInterval { session.breaks.reduce(0) { $0 + max(0, ( $1.end ?? min(now, session.end ?? now)).timeIntervalSince($1.start)) } }
     func workSeconds(_ session: WorkSession, now: Date = Date()) -> TimeInterval { max(0, (session.end ?? now).timeIntervalSince(session.start) - breakSeconds(session, now: now)) }
-    func startWork() { guard current == nil else { return }; data.sessions.append(WorkSession(start: Date(), breakLimitMinutes: data.limitMinutes)); save(); BreakAlerts.requestPermission() }
-    func endWork() { guard let i = data.sessions.lastIndex(where: { $0.start <= Date() && ($0.end == nil || $0.end! > Date()) }) else { return }; data.sessions[i].isAutomatic = false; let now = Date(); if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) { data.sessions[i].breaks[j].end = now }; data.sessions[i].end = now; save(); BreakAlerts.stop() }
-    func toggleBreak() {
-        synchronize()
+    func startWork() {
+        guard current == nil else { return }
+        undoAction = nil
+        data.sessions.append(WorkSession(start: Date(), breakLimitMinutes: data.limitMinutes))
+        save()
+        BreakAlerts.requestPermission()
+    }
+    func endWork() {
         let now = Date()
         guard let i = data.sessions.lastIndex(where: { $0.start <= now && ($0.end == nil || $0.end! > now) }) else { return }
+        undoAction = nil
+        data.sessions[i].isAutomatic = false
         if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) {
             data.sessions[i].breaks[j].end = now
-            BreakAlerts.stop()
-        } else {
-            let remaining = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: now))
-            data.sessions[i].breaks.append(BreakSession(start: now))
-            BreakAlerts.start(remainingSeconds: remaining, limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60), singleBreakSeconds: Double(perBreakLimitMinutes * 60), breakStartedAt: now)
         }
+        data.sessions[i].end = now
         save()
+        BreakAlerts.stop()
     }
+
+    func toggleBreak() {
+        if isOnBreak { finishBreak() }
+        else { startBreak(kind: .smoke) }
+    }
+
+    func startBreak(kind: BreakKind) {
+        synchronize()
+        let now = Date()
+        guard let i = data.sessions.lastIndex(where: { $0.start <= now && ($0.end == nil || $0.end! > now) }),
+              !data.sessions[i].breaks.contains(where: { $0.end == nil }) else { return }
+        let remaining = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: now))
+        let item = BreakSession(start: now, kind: kind)
+        data.sessions[i].breaks.append(item)
+        undoAction = ShiftlyUndoAction(sessionID: data.sessions[i].id, breakID: item.id,
+                                       operation: .started, kind: kind, issuedAt: now,
+                                       label: kind == .lunch ? "Обед начат" : "Перекур начат")
+        save()
+        BreakAlerts.requestPermission()
+        BreakAlerts.start(remainingSeconds: remaining,
+                          limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60),
+                          singleBreakSeconds: Double((kind == .lunch ? 30 : perBreakLimitMinutes) * 60),
+                          breakStartedAt: now, kind: kind)
+    }
+
+    func finishBreak() {
+        synchronize()
+        let now = Date()
+        guard let i = data.sessions.lastIndex(where: { $0.start <= now && ($0.end == nil || $0.end! > now) }),
+              let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) else { return }
+        let item = data.sessions[i].breaks[j]
+        data.sessions[i].breaks[j].end = now
+        undoAction = ShiftlyUndoAction(sessionID: data.sessions[i].id, breakID: item.id,
+                                       operation: .finished, kind: item.type, issuedAt: now,
+                                       label: item.type == .lunch ? "Обед завершён" : "Перекур завершён")
+        save()
+        BreakAlerts.stop()
+    }
+
+    @discardableResult
+    func undoLastBreakAction() -> Bool {
+        guard let action = undoAction, Date() <= action.expiresAt,
+              let i = data.sessions.firstIndex(where: { $0.id == action.sessionID }),
+              let j = data.sessions[i].breaks.firstIndex(where: { $0.id == action.breakID }) else { return false }
+        let item = data.sessions[i].breaks[j]
+        let now = Date()
+        switch action.operation {
+        case .started:
+            guard item.end == nil else { return false }
+            data.sessions[i].breaks.remove(at: j)
+            undoAction = nil
+            save()
+            BreakAlerts.stop()
+        case .finished:
+            guard item.end != nil,
+                  abs(item.end!.timeIntervalSince(action.issuedAt)) < 3,
+                  data.sessions[i].end == nil,
+                  !data.sessions[i].breaks.contains(where: { $0.id != action.breakID && $0.end == nil }) else { return false }
+            data.sessions[i].breaks[j].end = nil
+            undoAction = nil
+            save()
+            let remainingAtStart = max(0, Double(data.sessions[i].breakLimitMinutes * 60) - breakSeconds(data.sessions[i], now: item.start))
+            BreakAlerts.start(remainingSeconds: remainingAtStart,
+                              limitSeconds: Double(data.sessions[i].breakLimitMinutes * 60),
+                              singleBreakSeconds: Double((item.type == .lunch ? 30 : perBreakLimitMinutes) * 60),
+                              breakStartedAt: item.start, kind: item.type)
+        }
+        return true
+    }
+
     func setLimit(_ minutes: Int) { data.limitMinutes = max(1, minutes); save() }
     func addExtra(_ date: Date, night: Bool) -> Bool {
         let cal = Calendar.current
@@ -267,7 +380,13 @@ import WidgetKit
         if let raw = try? JSONEncoder().encode(data) {
             UserDefaults.standard.set(raw, forKey: key)
             ShiftlyShared.defaults.set(raw, forKey: key)
-            AutomaticBackups.save(data)
+            if AutomaticBackups.save(data) {
+                persistenceWarning = nil
+            } else {
+                persistenceWarning = "Не удалось обновить локальный JSON. Экспортируй резервную копию."
+            }
+        } else {
+            persistenceWarning = "Ошибка кодирования данных Shiftly"
         }
         objectWillChange.send()
         WidgetCenter.shared.reloadAllTimelines()

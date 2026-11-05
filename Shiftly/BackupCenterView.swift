@@ -65,7 +65,7 @@ struct BackupCenterView: View {
                         .font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     HStack {
                         summary("Смен", "\(store.data.sessions.count)")
-                        summary("Перекуров", "\(store.data.sessions.reduce(0) { $0 + $1.breaks.count })")
+                        summary("Перерывов", "\(store.data.sessions.reduce(0) { $0 + $1.breaks.count })")
                         summary("Заметок", "\(store.data.notes?.count ?? 0)")
                     }
                 }
@@ -224,7 +224,7 @@ struct BackupCenterView: View {
                     }
                     Section("Содержимое") {
                         LabeledContent("Смен", value: "\(candidate.data.sessions.count)")
-                        LabeledContent("Перекуров", value: "\(candidate.breaks)")
+                        LabeledContent("Перерывов", value: "\(candidate.breaks)")
                         LabeledContent("Заметок", value: "\(candidate.data.notes?.count ?? 0)")
                         LabeledContent("Лимит", value: "\(candidate.data.limitMinutes) мин")
                         if let last = candidate.data.sessions.map(\.start).max() {
@@ -415,6 +415,6 @@ struct BackupCenterView: View {
         store.replaceData(candidate.data)
         preview = nil
         refreshFiles()
-        info = "Восстановлено \(candidate.data.sessions.count) смен и \(candidate.breaks) перекуров. Предыдущая история сохранена локально."
+        info = "Восстановлено \(candidate.data.sessions.count) смен и \(candidate.breaks) перерывов. Предыдущая история сохранена локально."
     }
 }

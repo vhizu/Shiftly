@@ -31,7 +31,8 @@ struct ShiftlyProvider: TimelineProvider {
             let active = session.breaks.last?.end == nil && !session.breaks.isEmpty
             let used = session.breaks.reduce(0.0) { $0 + max(0, ($1.end ?? date).timeIntervalSince($1.start)) }
             let remaining = max(0, session.breakLimitMinutes - Int(used / 60))
-            return ShiftlyEntry(date: date, title: active ? "Идёт перекур" : "Смена идёт",
+            let lunch = session.breaks.last(where: { $0.end == nil })?.type == .lunch
+            return ShiftlyEntry(date: date, title: active ? (lunch ? "Идёт обед" : "Идёт перекур") : "Смена идёт",
                                detail: active ? "Вернись через приложение" : "Можно отдохнуть",
                                canStart: !active, remaining: remaining)
         }

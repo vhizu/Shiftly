@@ -24,10 +24,10 @@ struct ShiftlyLiveWidget: Widget {
                         .frame(width: 30, height: 30)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Shiftly · Перекур")
+                        Text(context.state.breakType == .lunch ? "Shiftly · Обед" : "Shiftly · Перекур")
                             .font(.subheadline.bold()).foregroundStyle(.white)
                             .lineLimit(1)
-                        Text("Текущий перерыв")
+                        Text(context.state.breakType == .lunch ? "Обед · 30 минут" : "Текущий перекур")
                             .font(.caption2).foregroundStyle(Color.white.opacity(0.72))
                     }
                     Spacer(minLength: 0)
@@ -56,7 +56,7 @@ struct ShiftlyLiveWidget: Widget {
                              countsDown: true) { EmptyView() } currentValueLabel: { EmptyView() }
                     .tint(islandViolet)
                 Button(intent: FinishBreakIntent()) {
-                    Label("Вернулся к работе", systemImage: "checkmark.circle.fill")
+                    Label(context.state.breakType == .lunch ? "Завершить обед" : "Вернулся к работе", systemImage: "checkmark.circle.fill")
                         .font(.caption.bold())
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -76,7 +76,7 @@ struct ShiftlyLiveWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label("Перекур", systemImage: "cup.and.saucer.fill")
+                    Label(context.state.breakType == .lunch ? "Обед" : "Перекур", systemImage: context.state.breakType.icon)
                         .font(.subheadline.bold())
                         .foregroundStyle(.white)
                 }
@@ -106,7 +106,7 @@ struct ShiftlyLiveWidget: Widget {
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 5) {
-                                Text("Отдыхай 💜").foregroundStyle(.white)
+                                Text(context.state.breakType == .lunch ? "Приятного аппетита 🍱" : "Отдыхай 💜").foregroundStyle(.white)
                                 Spacer(minLength: 0)
                                 Text("SHIFTLY").foregroundStyle(islandViolet)
                             }
