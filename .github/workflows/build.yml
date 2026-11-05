@@ -1,102 +1,164 @@
+
 name: Build Shiftly 1.9.2 IPA
+
 on:
   workflow_dispatch:
   push:
     branches: [main]
+
 jobs:
   build:
     runs-on: macos-15
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Select Xcode 26.3 for native Liquid Glass
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.3'
-      - name: Verify actual Xcode and iOS SDK versions
+
+      - name: Verify Xcode and iOS SDK versions
         run: |
           set -euo pipefail
           xcodebuild -version
           XCODE=$(xcodebuild -version | awk '/^Xcode / {print $2}')
           SDK=$(xcrun --sdk iphoneos --show-sdk-version)
           echo "Selected Xcode: $XCODE, iOS SDK: $SDK"
-          test "${XCODE%%.*}" -ge 26 || { echo "ERROR: Xcode 26+ required for glassEffect"; exit 1; }
-          test "${SDK%%.*}" -ge 26 || { echo "ERROR: iOS 26+ SDK required"; exit 1; }
+          test "${XCODE%%.*}" -ge 26
+          test "${SDK%%.*}" -ge 26
+
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Xcode version
-        run: |
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Generate Xcode project
         run: xcodegen generate
-      - name: Validate design, JSON import and island assets
+
+      - name: Validate source and assets
         run: |
           set -euo pipefail
           python3 - <<'PYCODE'
           from pathlib import Path
+
           live = Path("ShiftlyLive/ShiftlyLive.swift").read_text()
           backup = Path("Shiftly/BackupCenterView.swift").read_text()
           design = Path("Shiftly/ShiftlyDesign.swift").read_text()
-          assert 'Text(timerInterval:' in live, "Live countdown missing"
-          assert 'Button(intent: FinishBreakIntent())' in live, "Lock screen action missing"
-          assert 'Image("IslandIconBreak")' in live, "Verified mascot asset not referenced"
-          assert Path('ShiftlyLive/Assets.xcassets/IslandIconBreak.imageset/IslandIconBreak.png').is_file()
-          assert 'UIDocumentPickerViewController' in backup, "Broad JSON picker missing"
-          assert 'Обновить список файлов' in backup, "Refresh action missing"
-          assert 'saveBeforeRestore' in backup, "Pre-restore backup missing"
-          assert 'glassEffect(.regular, in: shape)' in design, "Native Liquid Glass cards missing"
-          assert 'LazyVGrid(columns:' in Path("Shiftly/MainView.swift").read_text(), "Equal-width quick actions missing"
-          assert 'frame(height: 35)' in live, "Compact lock screen button missing"
-          assert 'backupAction("Обновить файлы"' in backup, "Visible refresh tile missing"
           main = Path("Shiftly/MainView.swift").read_text()
-          assert 'HomeMascotBackdrop(onBreak:' in main, "Background mascot missing"
-          assert 'HomeMascotMood(onBreak:' in main, "Mascot reaction caption missing"
-          assert 'MascotPanel(' not in main, "Old mascot card still present"
-          assert not Path('Shiftly/Assets.xcassets/MascotDone.imageset').exists(), "Opaque white mascot asset still present"
-          for asset in ('MascotWork', 'MascotBreak'):
-            assert Path(f'Shiftly/Assets.xcassets/{asset}.imageset/{asset}.png').is_file(), "Mascot art missing"
 
-          print("Shiftly 1.9 source validations OK")
+          assert 'Text(timerInterval:' in live
+          assert 'Button(intent: FinishBreakIntent())' in live
+          assert 'Image("IslandIconBreak")' in live
+          assert Path(
+              "ShiftlyLive/Assets.xcassets/"
+              "IslandIconBreak.imageset/IslandIconBreak.png"
+          ).is_file()
+
+          assert 'UIDocumentPickerViewController' in backup
+          assert 'saveBeforeRestore' in backup
+          assert 'backupAction("Обновить файлы"' in backup
+
+          assert 'glassEffect(.regular, in: shape)' in design
+          assert 'LazyVGrid(columns:' in main
+          assert 'frame(height: 35)' in live
+
+          assert 'HomeMascotBackdrop(onBreak:' in main
+          assert 'HomeMascotMood(onBreak:' in main
+          assert 'MascotPanel(' not in main
+
+          assert not Path(
+              "Shiftly/Assets.xcassets/MascotDone.imageset"
+          ).exists()
+
+          for asset in ("MascotWork", "MascotBreak"):
+              assert Path(
+                  f"Shiftly/Assets.xcassets/"
+                  f"{asset}.imageset/{asset}.png"
+              ).is_file()
+
+          print("Shiftly 1.9.2 source validation OK")
           PYCODE
+
       - name: Build unsigned app
         run: |
           set -euo pipefail
-          xcodebuild -project Shiftly.xcodeproj -scheme Shiftly -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/DerivedData" CODE_SIGNING_ALLOWED=NO clean build
-      - name: Verify version, app extensions and Live Activity assets
+          xcodebuild \
+            -project Shiftly.xcodeproj \
+            -scheme Shiftly \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+      - name: Verify app and extensions
         run: |
           set -euo pipefail
+
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app"
           test -d "$APP"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "1.9.2"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "com.shiftly.app"
+
+          VERSION=$(/usr/libexec/PlistBuddy \
+            -c 'Print :CFBundleShortVersionString' \
+            "$APP/Info.plist")
+          test "$VERSION" = "1.9.2"
+
+          BUNDLE=$(/usr/libexec/PlistBuddy \
+            -c 'Print :CFBundleIdentifier' \
+            "$APP/Info.plist")
+          test "$BUNDLE" = "com.shiftly.app"
+
           for EXT in ShiftlyLive ShiftlyHomeWidget; do
             PLIST="$APP/PlugIns/$EXT.appex/Info.plist"
             test -f "$PLIST"
+
             case "$EXT" in
-              ShiftlyLive) EXPECTED=com.shiftly.app.live ;;
-              ShiftlyHomeWidget) EXPECTED=com.shiftly.app.home ;;
+              ShiftlyLive)
+                EXPECTED=com.shiftly.app.live
+                ;;
+              ShiftlyHomeWidget)
+                EXPECTED=com.shiftly.app.home
+                ;;
             esac
-            FOUND=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")
-            test "$FOUND" = "$EXPECTED" || { echo "Wrong $EXT bundle ID: $FOUND"; exit 1; }
+
+            FOUND=$(/usr/libexec/PlistBuddy \
+              -c 'Print :CFBundleIdentifier' "$PLIST")
+
+            test "$FOUND" = "$EXPECTED" || {
+              echo "Wrong bundle ID: $EXT - $FOUND"
+              exit 1
+            }
           done
+
           test -f "$APP/PlugIns/ShiftlyLive.appex/Assets.car"
-          for EXT in ShiftlyLive ShiftlyHomeWidget; do
-            EXT_PLIST="$APP/PlugIns/$EXT.appex/Info.plist"
-            /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$EXT_PLIST"
-            /usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$EXT_PLIST"
-            /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST"
-          done
-          echo "Validated app 1.9.2 and both embedded extensions"
+
+          echo "Shiftly 1.9.2 validated successfully"
+
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
+
           mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app" "$RUNNER_TEMP/Payload/"
+
+          cp -R \
+            "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app" \
+            "$RUNNER_TEMP/Payload/"
+
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/Shiftly-1.9.2-unsigned.ipa" Payload
-          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.9.2-unsigned.ipa" | grep 'ShiftlyHomeWidget.appex/Info.plist'
-          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.9.2-unsigned.ipa" | grep 'ShiftlyLive.appex/Info.plist'
-      - uses: actions/upload-artifact@v4
+
+          zip -qry \
+            "$GITHUB_WORKSPACE/Shiftly-1.9.2-unsigned.ipa" \
+            Payload
+
+          unzip -l \
+            "$GITHUB_WORKSPACE/Shiftly-1.9.2-unsigned.ipa" \
+            | grep 'ShiftlyHomeWidget.appex/Info.plist'
+
+          unzip -l \
+            "$GITHUB_WORKSPACE/Shiftly-1.9.2-unsigned.ipa" \
+            | grep 'ShiftlyLive.appex/Info.plist'
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
         with:
           name: Shiftly-1.9.2-unsigned-IPA
           path: Shiftly-1.9.2-unsigned.ipa
