@@ -92,73 +92,102 @@ func timeString(_ seconds: TimeInterval) -> String {
     return String(format: "%02d:%02d:%02d", n / 3600, (n / 60) % 60, n % 60)
 }
 
-struct MascotPanel: View {
-    let mode: Int // 0 off, 1 work, 2 break
+// The operator is a character in the scene, not a rectangular image card.
+// When there is no active shift, omit the old "MascotDone" asset entirely:
+// that source PNG has an opaque white background.
+struct HomeMascotBackdrop: View {
+    let onBreak: Bool
     let remainingSingle: TimeInterval
-    var compact: Bool = false
-    @State private var tapped = false
-    @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("shiftly.motion") private var motionEnabled = true
-    @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
-    private var accent: Color { (ShiftlyPalette(rawValue: themeName) ?? .violet).accent }
+    @State private var floating = false
 
-    private var asset: String {
-        if mode == 0 { return "MascotDone" }
-        if mode == 2 && remainingSingle > 120 { return "MascotBreak" }
-        return "MascotWork"
+    private var imageName: String {
+        onBreak && remainingSingle > 120 ? "MascotBreak" : "MascotWork"
     }
-    private var stage: String {
-        guard mode == 2 else { return mode == 1 ? "РАБОЧИЙ НАСТРОЙ" : "ВРЕМЯ ОТДЫХАТЬ" }
-        if remainingSingle <= 0 { return "ВРЕМЯ ВЫШЛО" }
-        if remainingSingle <= 60 { return "ОСТАЛАСЬ МИНУТА" }
-        if remainingSingle <= 120 { return "ПОРА ВОЗВРАЩАТЬСЯ" }
-        if remainingSingle <= 300 { return "СКОРО ОБРАТНО" }
-        return "КОФЕЙНАЯ ПАУЗА"
-    }
-    private var caption: String {
-        if tapped { return mode == 2 ? "Я слежу за твоими минутами 💜" : mode == 1 ? "Сегодня всё получится!" : "Увидимся на смене 💜" }
-        if mode == 2 && remainingSingle <= 0 { return "Эй, пора обратно! ⏰" }
-        if mode == 2 && remainingSingle <= 60 { return "Последняя минутка ☕" }
-        if mode == 2 && remainingSingle <= 300 { return "Допивай кофе, скоро работать 💜" }
-        return mode == 2 ? "Заслуженный перерыв ☕" : mode == 1 ? "Смена в деле!" : "Отдыхай, оператор 💜"
-    }
+
     var body: some View {
-        let height: CGFloat = compact ? 104 : 160
-        ZStack(alignment: .bottomLeading) {
-            LinearGradient(colors: [accent.opacity(0.12), .clear, .black.opacity(0.13)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image(asset)
-                .resizable().scaledToFit()
-                .frame(maxWidth: .infinity).frame(height: height + 8)
-                .offset(y: hovering ? -5 : 3)
-                .accessibilityHidden(true)
-            LinearGradient(colors: [.clear, .black.opacity(0.90)], startPoint: .center, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    Image(systemName: mode == 2 && remainingSingle < 60 ? "exclamationmark.circle.fill" : "sparkles")
-                        .symbolEffect(.pulse, options: .repeating)
-                    Text(stage).tracking(1.2)
-                }
-                .font(.caption2.bold())
-                .foregroundStyle(mode == 2 && remainingSingle < 60 ? .orange : accent)
-                Text(caption)
-                    .font(compact ? .subheadline : .headline)
-                    .lineLimit(2)
-            }.padding(16)
+        GeometryReader { geo in
+            let artWidth = min(geo.size.width * 1.18, 560)
+            ZStack(alignment: .topTrailing) {
+                Image(imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: artWidth)
+                    .opacity(0.97)
+                    .offset(x: artWidth * 0.18, y: floating ? -6 : 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+                // Keep navigation and white foreground labels legible without
+                // flattening the mascot into a grey opaque panel.
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.46), location: 0),
+                        .init(color: .black.opacity(0.16), location: 0.42),
+                        .init(color: .clear, location: 1)
+                    ], startPoint: .leading, endPoint: .trailing
+                )
+                .frame(height: min(geo.size.height * 0.78, 680))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .clear, location: 0.48),
+                        .init(color: Color(red: 0.04, green: 0.025, blue: 0.09).opacity(0.76), location: 1)
+                    ], startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: min(geo.size.height * 0.78, 680))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
         }
-        .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .shiftlyGlass(radius: 24, emphasis: true)
-        .onTapGesture {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { tapped.toggle() }
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        }
+        .ignoresSafeArea(edges: .bottom)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .onAppear {
-            if motionEnabled && !reduceMotion {
-                withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) { hovering = true }
+            guard motionEnabled && !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 3.3).repeatForever(autoreverses: true)) {
+                floating = true
             }
         }
-        .accessibilityLabel("Операторша. " + caption)
+    }
+}
+
+// Tiny text pill over the hero scene keeps the mascot's reactions, without
+// bringing back a big image card or blocking the timer below it.
+struct HomeMascotMood: View {
+    let onBreak: Bool
+    let remainingSingle: TimeInterval
+    @State private var alternate = false
+
+    private var message: String {
+        if alternate { return onBreak ? "Я слежу за твоими минутами 💜" : "Держим темп, оператор!" }
+        if !onBreak { return "Смена в деле! 💜" }
+        if remainingSingle <= 0 { return "Время вышло, возвращайся!" }
+        if remainingSingle <= 60 { return "Осталась минутка!" }
+        if remainingSingle <= 300 { return "Допивай кофе, пора обратно" }
+        return "Заслуженный перерыв ☕"
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { alternate.toggle() }
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        } label: {
+            Label(message, systemImage: onBreak && remainingSingle <= 60 ? "exclamationmark.circle.fill" : "sparkles")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 9)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.20), lineWidth: 0.7))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Операторша. " + message)
     }
 }
 
@@ -201,8 +230,16 @@ struct HomeView: View {
                             .accessibilityLabel(compact ? "Расширенный интерфейс" : "Компактный интерфейс")
                         }
 
-                        MascotPanel(mode: session == nil ? 0 : store.isOnBreak ? 2 : 1,
-                                    remainingSingle: singleRemaining, compact: compact)
+                        // A little clear breathing room keeps the full-size
+                        // character visible behind the glass; no separate card.
+                        if session != nil {
+                            Color.clear
+                                .frame(height: compact ? 72 : 112)
+                                .overlay(alignment: .bottomLeading) {
+                                    HomeMascotMood(onBreak: store.isOnBreak,
+                                                   remainingSingle: singleRemaining)
+                                }
+                        }
 
                         if let session {
                             let spent = store.breakSeconds(session, now: now)
@@ -255,18 +292,30 @@ struct HomeView: View {
                             }
                             .buttonStyle(ShiftlyPrimaryButtonStyle())
 
-                            HStack(spacing: 11) {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible(), spacing: 11),
+                                GridItem(.flexible(), spacing: 11)
+                            ], spacing: 11) {
                                 Button { showQuickPastBreak = true } label: {
                                     Label("Забытый перекур", systemImage: "clock.arrow.circlepath")
-                                        .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(12)
-                                        .shiftlyGlassControl(radius: 15)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 64)
+                                        .shiftlyGlassControl(radius: 18)
                                 }
                                 Button { showFocus = true } label: {
                                     Label("Фокус", systemImage: "scope")
-                                        .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(12)
-                                        .shiftlyGlassControl(radius: 15)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 64)
+                                        .shiftlyGlassControl(radius: 18)
                                 }
                             }
+                            .buttonStyle(.plain)
                             .foregroundStyle(.white)
                             if !compact {
                                 Button("Завершить смену", role: .destructive) { confirmEnd = true }
@@ -288,7 +337,17 @@ struct HomeView: View {
                     .padding(.bottom, 24)
                 }
                 .scrollIndicators(.hidden)
-                .background(ShiftlyBackdrop())
+                .background {
+                    ZStack(alignment: .top) {
+                        ShiftlyBackdrop()
+                        // The idle screen intentionally has *no* mascot image;
+                        // MascotDone.png had an opaque white background.
+                        if session != nil {
+                            HomeMascotBackdrop(onBreak: store.isOnBreak,
+                                               remainingSingle: singleRemaining)
+                        }
+                    }
+                }
             }
             .navigationTitle("Shiftly")
             .navigationBarTitleDisplayMode(.inline)
@@ -688,9 +747,12 @@ struct ShiftRing: View {
             VStack(spacing: 10) {
                 Image(systemName: "sparkles")
                     .font(.caption).foregroundStyle(palette.accent)
-                Text(subtitle)
-                    .font(.caption2.bold()).tracking(1)
-                    .foregroundStyle(.secondary)
+                Text(subtitle == "ДО КОНЦА СМЕНЫ" ? "ДО КОНЦА" : subtitle)
+                    .font(.system(size: compact ? 9 : 11, weight: .semibold))
+                    .tracking(compact ? 0.2 : 0.6)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(Color.white.opacity(0.78))
                 Text(remaining < 0 ? "+" + timeString(-remaining) : timeString(remaining))
                     .font(.system(size: compact ? 23 : 31, weight: .bold, design: .rounded))
                     .monospacedDigit().minimumScaleFactor(0.62).lineLimit(1)

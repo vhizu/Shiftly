@@ -15,38 +15,41 @@ private let islandBlue = Color(red: 0.48, green: 0.73, blue: 1)
 struct ShiftlyLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ShiftlyBreakAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
+            // Lock Screen Live Activities can be clipped above ~160 pt.
+            // Keep everything compact and within the system's presentation.
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
                     Image("IslandIconBreak")
                         .resizable().scaledToFit()
-                        .frame(width: 38, height: 38)
-                        .padding(3)
-                        .background(islandViolet.opacity(0.13), in: Circle())
-                    VStack(alignment: .leading, spacing: 3) {
+                        .frame(width: 30, height: 30)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
                         Text("Shiftly · Перекур")
-                            .font(.headline).foregroundStyle(.white)
-                        Text("До окончания текущего перекура")
-                            .font(.caption).foregroundStyle(Color.white.opacity(0.74))
+                            .font(.subheadline.bold()).foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text("Текущий перерыв")
+                            .font(.caption2).foregroundStyle(Color.white.opacity(0.72))
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "sparkles")
-                        .foregroundStyle(islandViolet)
+                        .font(.caption).foregroundStyle(islandViolet)
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(timerInterval: context.attributes.startedAt...context.state.deadline,
                          countsDown: true, showsHours: false)
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
                         .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
-                    Spacer(minLength: 0)
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("ОСТАЛОСЬ ЗА СМЕНУ")
-                            .font(.system(size: 9, weight: .semibold)).tracking(0.5)
-                            .foregroundStyle(Color.white.opacity(0.74))
+                    Spacer(minLength: 2)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("ЗА СМЕНУ")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.78))
                         Text(timerInterval: context.attributes.startedAt...context.state.totalDeadline,
                              countsDown: true, showsHours: true)
                             .font(.caption.bold().monospacedDigit())
                             .foregroundStyle(islandViolet)
+                            .lineLimit(1)
                     }
                 }
                 ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
@@ -54,14 +57,21 @@ struct ShiftlyLiveWidget: Widget {
                     .tint(islandViolet)
                 Button(intent: FinishBreakIntent()) {
                     Label("Вернулся к работе", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.bold())
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
+                        .frame(height: 35)
+                        .background(
+                            LinearGradient(colors: [islandViolet, Color(red: 0.57, green: 0.36, blue: 0.90)],
+                                           startPoint: .leading, endPoint: .trailing),
+                            in: Capsule()
+                        )
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(red: 0.70, green: 0.36, blue: 0.92))
+                .buttonStyle(.plain)
             }
-            .padding(14)
-            .activityBackgroundTint(Color(red: 0.095, green: 0.075, blue: 0.16))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .activityBackgroundTint(Color(red: 0.075, green: 0.055, blue: 0.135))
             .activitySystemActionForegroundColor(islandViolet)
         } dynamicIsland: { context in
             DynamicIsland {

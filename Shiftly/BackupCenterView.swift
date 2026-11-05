@@ -71,54 +71,63 @@ struct BackupCenterView: View {
                 }
                 .padding(17).shiftlyGlass(radius: 22, emphasis: true)
 
-                ShiftlySectionHeader(title: "Импорт и экспорт")
-                VStack(alignment: .leading, spacing: 11) {
-                    Button { showFilePicker = true } label: {
-                        Label("Выбрать JSON из «Файлов»", systemImage: "doc.text.magnifyingglass")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                ShiftlySectionHeader(title: "Восстановление")
+                Button { showFilePicker = true } label: {
+                    Label("Загрузить JSON из «Файлов»", systemImage: "square.and.arrow.down.on.square")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .buttonStyle(ShiftlyPrimaryButtonStyle())
+
+                Text("Открой любую резервную копию. Shiftly проверит её перед восстановлением.")
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.78))
+                    .padding(.horizontal, 4)
+
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ], spacing: 12) {
+                    backupAction("Выбрать папку", subtitle: "Найти все копии", symbol: "folder.badge.plus", tint: .cyan) {
+                        showFolderPicker = true
                     }
-                    .buttonStyle(ShiftlyPrimaryButtonStyle())
-                    Text("Разрешены файлы любого системного типа: после выбора Shiftly сам проверит JSON.")
-                        .font(.caption).foregroundStyle(Color.white.opacity(0.76))
-                    Divider().overlay(.white.opacity(0.12))
-                    Button { showFolderPicker = true } label: {
-                        Label("Выбрать папку с копиями", systemImage: "folder.badge.plus")
+                    backupAction("Обновить файлы", subtitle: "Повторный поиск", symbol: "arrow.clockwise", tint: .mint) {
+                        refreshFiles()
                     }
-                    .foregroundStyle(.white)
-                    Button { refreshFiles() } label: {
-                        Label("Обновить список файлов", systemImage: "arrow.clockwise")
+                    backupAction("Вставить JSON", subtitle: "Из буфера обмена", symbol: "doc.on.clipboard", tint: .orange) {
+                        importFromClipboard()
                     }
-                    .foregroundStyle(.white)
-                    Button { importFromClipboard() } label: {
-                        Label("Вставить текст JSON из буфера", systemImage: "doc.on.clipboard")
-                    }
-                    .foregroundStyle(.white)
-                    Text("Запасной способ, если файловый провайдер запрещает выбирать файл: открой JSON как текст, скопируй всё и нажми сюда.")
-                        .font(.caption2).foregroundStyle(Color.white.opacity(0.68))
-                    if let refreshed {
-                        Text("Список обновлён: " + ruDate(refreshed))
-                            .font(.caption2).foregroundStyle(Color.white.opacity(0.66))
-                    }
-                    Divider().overlay(.white.opacity(0.12))
-                    Button { exporting = true } label: {
-                        Label("Сохранить текущий JSON в «Файлы»", systemImage: "square.and.arrow.up")
-                    }
-                    .foregroundStyle(.white)
-                    Button { createLocalCopy() } label: {
-                        Label("Создать локальный снимок", systemImage: "externaldrive.badge.plus")
-                    }
-                    .foregroundStyle(.white)
-                    Button { exportingCSV = true } label: {
-                        Label("Экспортировать отчёт CSV", systemImage: "tablecells")
-                    }
-                    .foregroundStyle(.white)
-                    if let manualCopy {
-                        ShareLink(item: manualCopy) {
-                            Label("Поделиться последней копией", systemImage: "square.and.arrow.up")
-                        }.foregroundStyle(.white)
+                    backupAction("Локальный снимок", subtitle: "Создать страховку", symbol: "externaldrive.badge.plus", tint: .pink) {
+                        createLocalCopy()
                     }
                 }
-                .padding(17).shiftlyGlass(radius: 22)
+                if let refreshed {
+                    Text("Обновлено: " + ruDate(refreshed))
+                        .font(.caption2)
+                        .foregroundStyle(Color.white.opacity(0.70))
+                        .padding(.horizontal, 4)
+                }
+                ShiftlySectionHeader(title: "Сохранение и экспорт")
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ], spacing: 12) {
+                    backupAction("Сохранить JSON", subtitle: "В iCloud или «Файлы»", symbol: "square.and.arrow.up", tint: .green) {
+                        exporting = true
+                    }
+                    backupAction("Экспорт CSV", subtitle: "Таблица истории", symbol: "tablecells", tint: .blue) {
+                        exportingCSV = true
+                    }
+                }
+                if let manualCopy {
+                    ShareLink(item: manualCopy) {
+                        Label("Поделиться последней копией", systemImage: "square.and.arrow.up")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(15)
+                            .shiftlyGlassControl(radius: 17)
+                    }
+                }
 
                 ShiftlySectionHeader(title: "Найденные JSON в выбранной папке")
                 if let externalFolder {
@@ -190,7 +199,7 @@ struct BackupCenterView: View {
         .fileExporter(isPresented: $exporting,
                       document: ShiftBackupDocument(data: store.data),
                       contentType: .json,
-                      defaultFilename: "Shiftly-1.9-backup") { result in
+                      defaultFilename: "Shiftly-1.9.1-backup") { result in
             switch result {
             case .success: info = "Копия экспортирована. Проверь её в выбранной папке «Файлов»."
             case .failure(let error): info = "Ошибка экспорта: \(error.localizedDescription)"
@@ -199,7 +208,7 @@ struct BackupCenterView: View {
         .fileExporter(isPresented: $exportingCSV,
                       document: ShiftCSVDocument(data: store.data),
                       contentType: .commaSeparatedText,
-                      defaultFilename: "Shiftly-1.9-export") { result in
+                      defaultFilename: "Shiftly-1.9.1-export") { result in
             switch result {
             case .success: info = "CSV экспортирован в «Файлы»."
             case .failure(let error): info = "Ошибка CSV: \(error.localizedDescription)"
@@ -236,6 +245,36 @@ struct BackupCenterView: View {
                 } message: { Text("Сначала Shiftly сохранит текущие данные, затем загрузит \(candidate.name).") }
             }
         }
+    }
+
+    // Equal-sized touch targets with a clear visual hierarchy; avoid
+    // a long list of indistinguishable text-only backup buttons.
+    private func backupAction(_ title: String, subtitle: String, symbol: String,
+                              tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(tint)
+                    .frame(width: 39, height: 39)
+                    .background(tint.opacity(0.17), in: RoundedRectangle(cornerRadius: 13))
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.74))
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .padding(13)
+            .shiftlyGlassControl(radius: 20)
+            .contentShape(RoundedRectangle(cornerRadius: 20))
+        }
+        .buttonStyle(.plain)
     }
 
     private func summary(_ name: String, _ value: String) -> some View {

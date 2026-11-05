@@ -52,3 +52,17 @@ Backup restore: Files picker accepts generic file types; validates JSON after se
 Открой «Ещё → Резервные копии». Выбери файл JSON из «Файлов» (системный провайдер откроет копию файла), либо выбери папку и нажми «Обновить список файлов». Если файловый провайдер не позволяет выбрать файл, открой JSON как текст, скопируй его целиком и воспользуйся «Вставить текст JSON из буфера». Перед восстановлением увидишь содержимое, подтверждение и автоматическую страховочную копию. Приложение не может сканировать произвольные папки iCloud без предоставленного доступа.
 
 Файл `.github/workflows/build.yml` скрыт в приложении «Файлы» iPhone; видимая копия — `Workflow/build.yml`.
+
+## Shiftly 1.9.1 — Glass & Layout Fix
+
+- Native Liquid Glass now builds with explicitly selected Xcode 26.3. The previous GitHub workflow defaulted to Xcode 16.4, which silently excluded `#if compiler(>=6.2)` UI.
+- Compact lock screen Live Activity layout targets <160 pt and preserves the "Вернулся к работе" AppIntent.
+- Equal-size quick action tiles on Home; readable compact ring label.
+- Backup actions grouped into clear, colorful two-column touch targets; JSON picker, folder refresh, restore safety and exports remain.
+- All app data models and backup JSON format unchanged.
+- Keep the working IPA and exported JSON before upgrading. Real-device verification still required.
+
+
+## 1.9.2 — Background Mascot
+
+Операторша в активной смене теперь фоном за стеклянными карточками. Отдельной hero-card нет. В выходной и после смены изображение не выводится, так как у прежнего `MascotDone.png` был белый фон. Работающие функции 1.9.1 сохранены. Workflow находится в `.github/workflows/build.yml`, видимая копия — `Workflow/build.yml`.

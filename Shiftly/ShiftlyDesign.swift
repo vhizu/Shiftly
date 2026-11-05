@@ -102,25 +102,43 @@ struct ShiftlyGlass: ViewModifier {
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     private var accent: Color { (ShiftlyPalette(rawValue: themeName) ?? .violet).accent }
 
-    func body(content: Content) -> some View {
+    // Real system Liquid Glass on iOS 26. The former implementation combined
+    // a material, an opaque tint and an extra backdrop, producing grey tiles.
+    @ViewBuilder func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return content
-            .frame(maxWidth: .infinity)
-            .background {
-                shape
-                    .fill(Color.white.opacity(emphasis ? 0.075 : 0.045))
-                    .background(.ultraThinMaterial, in: shape)
-                    .overlay {
-                        shape.strokeBorder(
-                            LinearGradient(colors: [.white.opacity(0.40), .white.opacity(0.12), accent.opacity(0.20)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.85)
-                    }
-                    .overlay(alignment: .top) {
-                        Capsule().fill(.white.opacity(0.16)).frame(height: 1).padding(.horizontal, radius)
-                    }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content
+                .frame(maxWidth: .infinity)
+                .glassEffect(.regular, in: shape)
+                .overlay {
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(0.50), .white.opacity(0.12), accent.opacity(0.24)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ), lineWidth: 0.8
+                    )
+                }
+                .shadow(color: .black.opacity(0.13), radius: 10, y: 5)
+        } else {
+            legacyGlass(content, shape: shape)
+        }
+        #else
+        legacyGlass(content, shape: shape)
+        #endif
+    }
+
+    private func legacyGlass(_ content: Content, shape: RoundedRectangle) -> some View {
+        content.frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial, in: shape)
+            .overlay {
+                shape.strokeBorder(
+                    LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.10), accent.opacity(0.18)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 0.8
+                )
             }
-            .shadow(color: .black.opacity(0.16), radius: 10, y: 5)
-            .shadow(color: accent.opacity(emphasis ? 0.13 : 0.045), radius: 20, y: 7)
+            .shadow(color: .black.opacity(0.14), radius: 10, y: 5)
     }
 }
 
@@ -241,7 +259,7 @@ struct ShiftlyStatChip: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
