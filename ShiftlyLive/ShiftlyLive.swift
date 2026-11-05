@@ -80,12 +80,16 @@ struct ShiftlyLiveWidget: Widget {
                         Image("IslandIconBreak")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 64, height: 64)
+                            .frame(width: 58, height: 58)
+                            .padding(5)
+                            .background(Color.purple.opacity(0.11), in: Circle())
+                            .overlay(Circle().stroke(Color.purple.opacity(0.30), lineWidth: 1))
                             .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Перекур · отдыхай 💜")
-                                .font(.caption)
+                                .font(.caption.bold())
+                                .foregroundStyle(.purple)
                                 .lineLimit(2)
                             ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
                                          countsDown: true) {
@@ -94,6 +98,8 @@ struct ShiftlyLiveWidget: Widget {
                                 EmptyView()
                             }
                                 .tint(.purple)
+                                .padding(5)
+                                .background(Color.purple.opacity(0.09), in: Capsule())
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }

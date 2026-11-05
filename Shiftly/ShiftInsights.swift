@@ -58,10 +58,15 @@ struct BreakHubView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Label("Центр перекуров", systemImage: "cup.and.saucer.fill")
-                        .font(.title2.bold()).foregroundStyle(.purple)
-                    Text("Запиши забытое время или вернись к перекуру, который уже начался.")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 9) {
+                        Label("ЦЕНТР ПЕРЕКУРОВ", systemImage: "cup.and.saucer.fill")
+                            .font(.caption.bold()).tracking(1.6).foregroundStyle(.purple)
+                        Text("Твоё время отдыха").font(.system(size: 28, weight: .bold, design: .rounded))
+                        Text("Добавь забытый перекур или продолжи уже начатый — без потери минут.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(19).shiftlyGlass(radius: 25, emphasis: true)
                     if let session = selectedSession {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Смена: \(ruDate(session.start))").font(.headline)
@@ -82,13 +87,13 @@ struct BreakHubView: View {
                                 .tint(.purple)
                         }
                         .padding(16)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        .shiftlyGlass(radius: 22)
 
                         Button { showPastEditor = true } label: {
                             Label("+ Добавить забытый перекур", systemImage: "clock.badge.plus")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ShiftlyPrimaryButtonStyle())
                         .controlSize(.large)
 
                         if store.current?.id == session.id && !store.isOnBreak {
@@ -110,7 +115,7 @@ struct BreakHubView: View {
                                 .buttonStyle(.bordered)
                             }
                             .padding(16)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                            .shiftlyGlass(radius: 22)
                         }
 
                         VStack(alignment: .leading, spacing: 9) {
@@ -133,7 +138,7 @@ struct BreakHubView: View {
                             }
                         }
                         .padding(16)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        .shiftlyGlass(radius: 22)
                     } else {
                         ContentUnavailableView("Нет смен", systemImage: "calendar.badge.exclamationmark",
                                                description: Text("Сначала открой приложение во время смены"))
@@ -149,6 +154,7 @@ struct BreakHubView: View {
             }
             .navigationTitle("Перекуры")
             .navigationBarTitleDisplayMode(.inline)
+            .background(ShiftlyBackdrop())
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
             .sheet(isPresented: $showPastEditor) {
                 if let session = selectedSession { QuickPastBreakEditor(sessionID: session.id) }
@@ -201,6 +207,8 @@ struct QuickPastBreakEditor: View {
             }
             .navigationTitle("Забытый перекур")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .background(ShiftlyBackdrop())
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } } }
             .onAppear {
                 guard !initialized else { return }
@@ -217,37 +225,53 @@ struct QuickPastBreakEditor: View {
 struct NextShiftView: View {
     @EnvironmentObject var store: ShiftStore
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
+    private var palette: ShiftlyPalette { ShiftlyPalette(rawValue: themeName) ?? .violet }
     var body: some View {
         NavigationStack {
-            TimelineView(.periodic(from: .now, by: 60)) { tick in
+            TimelineView(.periodic(from: .now, by: 1)) { tick in
                 ScrollView {
-                    VStack(spacing: 18) {
-                        Image(systemName: "moon.stars.fill")
-                            .font(.system(size: 54)).foregroundStyle(.purple)
-                        Text("Следующая смена").font(.title.bold())
-                        if let next = store.nextScheduledShift(after: tick.date) {
-                            Text(next.extra ? "Подработка" : "По графику")
-                                .font(.subheadline.bold()).foregroundStyle(.purple)
-                            Text(ruDate(next.interval.start))
-                                .font(.title3.bold())
-                            Text(timeString(next.interval.start.timeIntervalSince(tick.date)))
-                                .font(.system(size: 42, weight: .bold, design: .rounded))
-                                .monospacedDigit()
-                            Text("До начала")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Смена длится 12 часов · \(Calendar.current.component(.hour, from: next.interval.start) == 20 ? "ночная" : "дневная")")
-                                .font(.subheadline)
-                            Text("Окончание: \(ruDate(next.interval.end))")
-                                .font(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Text("Нет смен в ближайшем месяце")
-                                .foregroundStyle(.secondary)
+                    VStack(spacing: 19) {
+                        VStack(spacing: 14) {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(palette.accent)
+                                .symbolEffect(.pulse, options: .repeating)
+                                .padding(.top, 11)
+                            Text("СЛЕДУЮЩАЯ СМЕНА")
+                                .font(.caption.bold()).tracking(2).foregroundStyle(palette.accent)
+                            if let next = store.nextScheduledShift(after: tick.date) {
+                                let night = Calendar.current.component(.hour, from: next.interval.start) == 20
+                                Text(night ? "Ночная 🌙" : "Дневная ☀️")
+                                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                                Text(next.extra ? "Внеплановая подработка" : "По основному графику")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                Text(timeString(max(0, next.interval.start.timeIntervalSince(tick.date))))
+                                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                                    .monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
+                                    .foregroundStyle(.white)
+                                Text("ДО НАЧАЛА")
+                                    .font(.caption2.bold()).tracking(2).foregroundStyle(.secondary)
+                                HStack(spacing: 12) {
+                                    ShiftlyStatChip(symbol: "calendar", title: "Начало", value: next.interval.start.formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Locale(identifier: "ru_RU"))))
+                                    ShiftlyStatChip(symbol: "flag.checkered", title: "Конец", value: next.interval.end.formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Locale(identifier: "ru_RU"))))
+                                }
+                                Text("12 часов · 2 дня → выходной → 2 ночи → 3 выходных")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            } else {
+                                Text("Нет смен на ближайший месяц").foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(20)
+                        .frame(maxWidth: .infinity)
+                        .shiftlyGlass(radius: 28, emphasis: true)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(24)
+                    .padding(17)
                 }
+                .scrollIndicators(.hidden)
             }
+            .background(ShiftlyBackdrop())
             .navigationTitle("Следующая смена")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Закрыть") { dismiss() } } }
@@ -268,10 +292,14 @@ struct ShiftReportView: View {
                 let remaining = Double(session.breakLimitMinutes * 60) - elapsed
                 let isNight = Calendar.current.component(.hour, from: session.start) >= 14
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("Итоги смены", systemImage: "chart.bar.doc.horizontal")
-                        .font(.title2.bold()).foregroundStyle(.purple)
-                    Text(ruDate(session.start))
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 9) {
+                        Label("ОТЧЁТ ОПЕРАТОРА", systemImage: "chart.bar.doc.horizontal")
+                            .font(.caption.bold()).tracking(1.8).foregroundStyle(.purple)
+                        Text("Смена завершена 💜").font(.system(size: 29, weight: .bold, design: .rounded))
+                        Text(ruDate(session.start)).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18).shiftlyGlass(radius: 24, emphasis: true)
                     reportRow("Тип", isNight ? "Ночная" : "Дневная", "moon.stars.fill")
                     reportRow("Работа", timeString(worked), "briefcase.fill")
                     reportRow("Отдых", timeString(elapsed), "cup.and.saucer.fill")
@@ -288,7 +316,7 @@ struct ShiftReportView: View {
                                              rested: elapsed, longest: longest, remaining: remaining)) {
                         Label("Поделиться отчётом", systemImage: "square.and.arrow.up")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ShiftlyPrimaryButtonStyle())
                 }
                 .padding()
             } else {
@@ -297,6 +325,7 @@ struct ShiftReportView: View {
         }
         .navigationTitle("Отчёт смены")
         .navigationBarTitleDisplayMode(.inline)
+        .background(ShiftlyBackdrop())
     }
 
     private func reportRow(_ name: String, _ value: String, _ symbol: String) -> some View {
@@ -307,7 +336,7 @@ struct ShiftReportView: View {
             Text(value).bold().monospacedDigit()
         }
         .padding(13)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shiftlyGlass(radius: 17)
     }
 
     private func shareText(session: WorkSession, worked: Double,
