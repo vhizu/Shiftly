@@ -12,7 +12,7 @@ enum ShiftlyPalette: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .violet: return "Ночная фиалка"
+        case .violet: return "Midnight Graphite"
         case .deepBlue: return "Глубокий синий"
         case .factory: return "Заводской пурпур"
         case .graphite: return "Мягкий графит"
@@ -21,7 +21,7 @@ enum ShiftlyPalette: String, CaseIterable, Identifiable {
     }
     var accent: Color {
         switch self {
-        case .violet: return Color(red: 0.75, green: 0.49, blue: 1.0)
+        case .violet: return Color(red: 0.70, green: 0.58, blue: 0.84)
         case .deepBlue: return Color(red: 0.39, green: 0.70, blue: 1.0)
         case .factory: return Color(red: 0.94, green: 0.45, blue: 0.82)
         case .graphite: return Color(red: 0.73, green: 0.83, blue: 0.98)
@@ -30,7 +30,7 @@ enum ShiftlyPalette: String, CaseIterable, Identifiable {
     }
     var secondary: Color {
         switch self {
-        case .violet: return Color(red: 0.28, green: 0.62, blue: 1.0)
+        case .violet: return Color(red: 0.43, green: 0.55, blue: 0.70)
         case .deepBlue: return Color(red: 0.51, green: 0.37, blue: 0.99)
         case .factory: return Color(red: 0.43, green: 0.36, blue: 0.95)
         case .graphite: return Color(red: 0.40, green: 0.60, blue: 0.73)
@@ -39,7 +39,7 @@ enum ShiftlyPalette: String, CaseIterable, Identifiable {
     }
     var background: [Color] {
         switch self {
-        case .violet: return [Color(red: 0.11, green: 0.06, blue: 0.27), Color(red: 0.035, green: 0.035, blue: 0.10), Color(red: 0.035, green: 0.02, blue: 0.08)]
+        case .violet: return [Color(red: 0.075, green: 0.064, blue: 0.12), Color(red: 0.035, green: 0.041, blue: 0.073), Color(red: 0.024, green: 0.026, blue: 0.046)]
         case .deepBlue: return [Color(red: 0.035, green: 0.10, blue: 0.23), Color(red: 0.035, green: 0.05, blue: 0.12), Color(red: 0.02, green: 0.04, blue: 0.09)]
         case .factory: return [Color(red: 0.17, green: 0.045, blue: 0.17), Color(red: 0.07, green: 0.035, blue: 0.13), Color(red: 0.035, green: 0.025, blue: 0.065)]
         case .graphite: return [Color(red: 0.11, green: 0.14, blue: 0.18), Color(red: 0.055, green: 0.07, blue: 0.11), Color(red: 0.04, green: 0.05, blue: 0.08)]

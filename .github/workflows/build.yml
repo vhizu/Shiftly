@@ -1,4 +1,4 @@
-name: Build Shiftly 1.11.0 IPA
+name: Build Shiftly 1.11.1 IPA
 on:
   workflow_dispatch:
   push:
@@ -71,8 +71,13 @@ jobs:
             assert picture.is_file() and picture.read_bytes().startswith(b'\x89PNG'), f"Missing new sprite: {asset}"
           assert 'enum MascotScene: Equatable' in Path('Shiftly/MascotScene.swift').read_text(), "State selector missing"
           assert 'showFocus' not in main, "Retired focus action still in main view"
+          assert 'tabBarMinimizeBehavior' not in main, "Minimizing tab bar would hide UI actions"
+          assert 'shiftlyTabClearance()' in main, "Floating tab bar clearance missing"
+          assert 'stat("Время обеда"' in main, "Sixth symmetrical statistics tile missing"
+          assert 'Form {' not in main[main.index('struct SettingsView: View {'):main.index('struct ShiftRing: View {')], "Opaque settings Form remains"
+          assert 'Text(ruMonth(month))' in main, "Russian month heading missing"
 
-          print("Shiftly 1.11.0 source validations OK")
+          print("Shiftly 1.11.1 source validations OK")
           PYCODE
       - name: Test old JSON and lunch model without iOS UI
         run: |
@@ -88,7 +93,7 @@ jobs:
           set -euo pipefail
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app"
           test -d "$APP"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "1.11.0"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "1.11.1"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "com.shiftly.app"
           for EXT in ShiftlyLive ShiftlyHomeWidget; do
             PLIST="$APP/PlugIns/$EXT.appex/Info.plist"
@@ -116,18 +121,18 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$EXT_PLIST"
             /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST"
           done
-          echo "Validated app 1.11.0 and both embedded extensions"
+          echo "Validated app 1.11.1 and both embedded extensions"
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/Shiftly-1.11.0-unsigned.ipa" Payload
-          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.0-unsigned.ipa" | grep 'ShiftlyHomeWidget.appex/Info.plist'
-          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.0-unsigned.ipa" | grep 'ShiftlyLive.appex/Info.plist'
+          zip -qry "$GITHUB_WORKSPACE/Shiftly-1.11.1-unsigned.ipa" Payload
+          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.1-unsigned.ipa" | grep 'ShiftlyHomeWidget.appex/Info.plist'
+          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.1-unsigned.ipa" | grep 'ShiftlyLive.appex/Info.plist'
       - uses: actions/upload-artifact@v4
         with:
-          name: Shiftly-1.11.0-unsigned-IPA
-          path: Shiftly-1.11.0-unsigned.ipa
+          name: Shiftly-1.11.1-unsigned-IPA
+          path: Shiftly-1.11.1-unsigned.ipa
           if-no-files-found: error

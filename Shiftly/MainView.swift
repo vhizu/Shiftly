@@ -21,18 +21,10 @@ struct MainView: View {
         .tint(palette.accent)
     }
 
-    @ViewBuilder var body: some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            // Native floating Liquid Glass tab bar; avoid a custom bar that
-            // would interfere with iOS safe areas and navigation gestures.
-            tabs.tabBarMinimizeBehavior(.onScrollDown)
-        } else {
-            tabs
-        }
-        #else
+    var body: some View {
+        // Keep the native Liquid Glass bar visible. Auto-minimization covered
+        // quick actions and could leave only a lone tab icon on iOS 26.
         tabs
-        #endif
     }
 }
 
@@ -72,6 +64,7 @@ struct MoreView: View {
             }
             .buttonStyle(.plain)
             .scrollIndicators(.hidden)
+            .shiftlyTabClearance()
             .background(ShiftlyBackdrop())
             .navigationTitle("Ещё")
             .navigationBarTitleDisplayMode(.inline)
@@ -79,6 +72,27 @@ struct MoreView: View {
     }
 }
 
+
+// An iOS 26 floating tab bar overlaps the scroll area instead of consuming it.
+// Reserve enough space for the last action on screens living inside MainView's tabs.
+private struct ShiftlyTabClearance: ViewModifier {
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: 92)
+        }
+    }
+}
+
+extension View {
+    func shiftlyTabClearance() -> some View { modifier(ShiftlyTabClearance()) }
+}
+
+func ruMonth(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "ru_RU")
+    formatter.dateFormat = "LLLL yyyy"
+    return formatter.string(from: date).capitalized(with: Locale(identifier: "ru_RU"))
+}
 
 func ruDate(_ date: Date) -> String {
     let formatter = DateFormatter()
@@ -228,6 +242,7 @@ struct HomeView: View {
                     .padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
+                .shiftlyTabClearance()
                 .background {
                     ZStack {
                         ShiftlyBackdrop()
@@ -463,7 +478,7 @@ struct StatsView: View {
                     HStack {
                         Button { month = Calendar.current.date(byAdding: .month, value: -1, to: month)! } label: { Image(systemName: "chevron.left") }
                         Spacer()
-                        Text(month.formatted(.dateTime.month(.wide).year())).font(.headline).foregroundStyle(.white)
+                        Text(ruMonth(month)).font(.headline).foregroundStyle(.white)
                         Spacer()
                         Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
                     }
@@ -474,6 +489,7 @@ struct StatsView: View {
                         stat("Средний перекур", "\(average) мин", "timer")
                         stat("Перекуров", "\(smokes.count)", "cup.and.saucer.fill")
                         stat("Обедов", "\(lunches.count)", "fork.knife")
+                        stat("Время обеда", String(format: "%.0f мин", lunches.reduce(0.0) { $0 + $1.seconds(asOf: Date()) } / 60), "hourglass")
                     }
                     ShiftlySectionHeader(title: "Перерывы за неделю")
                     ShiftlyWeekBars(sessions: store.data.sessions)
@@ -496,6 +512,7 @@ struct StatsView: View {
                 .padding(16).frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
+            .shiftlyTabClearance()
             .background(ShiftlyBackdrop())
             .navigationTitle("Статистика")
         }
@@ -505,8 +522,11 @@ struct StatsView: View {
             Label(title, systemImage: symbol).font(.caption).foregroundStyle(Color.white.opacity(0.73))
             Text(value).font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(.white).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            .padding(15).shiftlyGlass(radius: 18)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .frame(height: 108, alignment: .topLeading)
+        .shiftlyGlass(radius: 18)
     }
     func comparison(_ title: String, sessions: [WorkSession], color: Color) -> some View {
         let seconds = sessions.reduce(0.0) { $0 + store.breakSeconds($1) }
@@ -577,6 +597,7 @@ struct PayrollView: View {
                 .frame(maxWidth: .infinity).padding(16)
             }
             .scrollIndicators(.hidden)
+            .shiftlyTabClearance()
             .background(ShiftlyBackdrop())
             .navigationTitle("Зарплата")
         }
@@ -617,7 +638,7 @@ struct CalendarView: View {
                     HStack {
                         Button { month = Calendar.current.date(byAdding: .month, value: -1, to: month)! } label: { Image(systemName: "chevron.left") }
                         Spacer()
-                        Text(month.formatted(.dateTime.month(.wide).year())).font(.headline)
+                        Text(ruMonth(month)).font(.headline)
                         Spacer()
                         Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
                     }
@@ -667,7 +688,7 @@ struct CalendarView: View {
                     Text("Проверка правила 42 часов требует уточнения условий предприятия.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(16).frame(maxWidth: .infinity)
-            }.scrollIndicators(.hidden).background(ShiftlyBackdrop()).navigationTitle("График")
+            }.scrollIndicators(.hidden).shiftlyTabClearance().background(ShiftlyBackdrop()).navigationTitle("График")
         }
     }
     func monthDays() -> [Date] {
@@ -737,39 +758,48 @@ struct SettingsView: View {
     @AppStorage("shiftly.haptics") private var haptics = true
     @AppStorage("shiftly.autoAtmosphere") private var autoAtmosphere = true
     @AppStorage("shiftly.talkFrequency") private var talkFrequency = "normal"
+
+    private var accent: Color { (ShiftlyPalette(rawValue: themeName) ?? .violet).accent }
+
     var body: some View {
-            Form {
-                Section("Лимит на новую смену") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                settingsGroup("Лимит на новую смену") {
                     Picker("Минуты", selection: Binding(get: { store.data.limitMinutes }, set: { store.setLimit($0) })) {
                         ForEach([60, 90, 120, 150, 180, 210, 240], id: \.self) { Text("\($0) мин").tag($0) }
                     }
-                    Text("Текущая смена сохраняет лимит, установленный при её запуске.").font(.caption).foregroundStyle(.secondary)
+                    .pickerStyle(.menu)
+                    settingsNote("Текущая смена сохраняет лимит, установленный при её запуске.")
                 }
-                Section("Один перекур") {
+                settingsGroup("Один перекур") {
                     Picker("Минут на перекур", selection: Binding(get: { store.perBreakLimitMinutes }, set: { store.setPerBreakLimit($0) })) {
                         ForEach([5, 10, 15, 20, 30], id: \.self) { Text("\($0) мин").tag($0) }
                     }
-                    Text("По умолчанию 15 минут. Отдельно от общего лимита смены.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .pickerStyle(.menu)
+                    settingsNote("По умолчанию 15 минут. Каждый перекур расходует общий лимит отдыха.")
                 }
-                Section("Обед") {
+                settingsGroup("Обед") {
                     Label("Обед — 30 минут", systemImage: "fork.knife")
-                    Text("Обед учитывается внутри общего лимита 120/150 минут вместе с перекурами. В истории обеды отмечены отдельно.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    settingsNote("Обед и перекуры расходуют общий запас 120/150 минут. В истории учитываются отдельно.")
                 }
-                Section("График") {
+                settingsGroup("График") {
                     Toggle("Автоматический учёт", isOn: Binding(get: { store.autoEnabled }, set: { store.setAuto($0) }))
+                    settingsDivider
                     Toggle("Напоминания за 1 час и 15 минут", isOn: Binding(get: { store.data.remindEnabled ?? true }, set: { store.setReminders($0) }))
-                    Button("Разрешить уведомления") { BreakAlerts.requestPermission() }
-                    Text("2 дня → выходной → 2 ночи → 3 выходных")
-                    Text("Опорная дата: 4 ноября 2026 — первая ночь").font(.caption).foregroundStyle(.secondary)
+                    settingsDivider
+                    Button { BreakAlerts.requestPermission() } label: {
+                        Label("Разрешить уведомления", systemImage: "bell.badge")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    settingsNote("Текущий цикл: 2 дня → выходной → 2 ночи → 3 выходных. 4 ноября 2026 — первая ночь.")
                 }
-                Section("Liquid Glass · оформление") {
+                settingsGroup("Liquid Glass · оформление") {
                     Picker("Цветовая тема", selection: $themeName) {
                         ForEach(ShiftlyPalette.allCases) { palette in
                             Text(palette.label).tag(palette.rawValue)
                         }
                     }
+                    .pickerStyle(.menu)
                     HStack(spacing: 13) {
                         ForEach(ShiftlyPalette.allCases) { palette in
                             Button {
@@ -778,49 +808,78 @@ struct SettingsView: View {
                                 Circle()
                                     .fill(LinearGradient(colors: [palette.accent, palette.secondary], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 38, height: 38)
-                                    .overlay(Circle().stroke(.white.opacity(themeName == palette.rawValue ? 0.9 : 0.0), lineWidth: 2.5))
+                                    .overlay(Circle().stroke(.white.opacity(themeName == palette.rawValue ? 0.95 : 0), lineWidth: 2.5))
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(palette.label)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    settingsDivider
                     Toggle("Неоновый ночной градиент", isOn: $neonNight)
                     Toggle("Плавные анимации", isOn: $motionEnabled)
-                    Toggle("Автоматическая атмосфера дня и ночи", isOn: $autoAtmosphere)
-                    Text("При энергосбережении и системном уменьшении движения анимации приостанавливаются.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if #available(iOS 26.0, *) {
-                        Text("Настоящий Liquid Glass доступен на этом iPhone")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("На этой версии iOS используется полупрозрачный стиль с системным материалом")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    Toggle("Атмосфера дня и ночи", isOn: $autoAtmosphere)
+                    settingsNote("На iOS 26 используется системный Liquid Glass. Энергосбережение и уменьшение движения приостанавливают фоновые анимации.")
                 }
-                Section("Операторша 💜") {
+                settingsGroup("Операторша 💜") {
                     Picker("Частота реплик", selection: $talkFrequency) {
                         Text("Редко").tag("rare")
                         Text("Обычно").tag("normal")
                         Text("Часто").tag("often")
                     }
+                    .pickerStyle(.menu)
                     Toggle("Тактильная отдача", isOn: $haptics)
-                    Text("144 офлайн-реплики. Нажми на подпись операторши, чтобы услышать другую. Без лишних push-уведомлений.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    settingsNote("144 офлайн-реплики. Нажми на подпись операторши, чтобы услышать другую.")
                 }
-                Section("Dynamic Island · диагностика") {
-                    Text("Разрешены системой: \(live.enabled ? "да" : "нет")")
-                    Text(live.status).font(.caption).textSelection(.enabled)
-                    Text("Запусти смену и перекур, затем проверь этот статус.").font(.caption).foregroundStyle(.secondary)
+                settingsGroup("Dynamic Island · диагностика") {
+                    Label("Разрешены системой: \(live.enabled ? "да" : "нет")", systemImage: "waveform.path")
+                    Text(live.status)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.80))
+                        .textSelection(.enabled)
+                    settingsNote("Запусти смену и перерыв, затем проверь этот статус.")
                 }
-                Section("О приложении") {
+                settingsGroup("О приложении") {
                     Text("Shiftly \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") · сборка \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")")
-                    Text("Данные хранятся локально на устройстве.").font(.caption).foregroundStyle(.secondary)
+                    settingsNote("История хранится локально. Перед обновлением сохрани JSON-бэкап в Файлы.")
                 }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(ShiftlyBackdrop())
-            .navigationTitle("Настройки")
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: 96)
+        }
+        .scrollIndicators(.hidden)
+        .foregroundStyle(.white)
+        .tint(accent)
+        .background(ShiftlyBackdrop())
+        .navigationTitle("Настройки")
+    }
+
+    @ViewBuilder private func settingsGroup<Content: View>(
+        _ title: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ShiftlySectionHeader(title: title)
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .font(.subheadline)
+            .padding(16)
+            .shiftlyGlass(radius: 22)
+        }
+    }
+
+    private var settingsDivider: some View {
+        Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+    }
+
+    private func settingsNote(_ value: String) -> some View {
+        Text(value)
+            .font(.caption)
+            .foregroundStyle(.white.opacity(0.68))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -838,7 +897,7 @@ struct ShiftRing: View {
                 .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1).padding(13))
             Circle().stroke(palette.accent.opacity(0.13), lineWidth: 14)
             Circle().trim(from: 0, to: fraction)
-                .stroke(AngularGradient(colors: [palette.accent, palette.secondary, .pink, palette.accent], center: .center),
+                .stroke(AngularGradient(colors: [palette.accent, palette.secondary, palette.accent.opacity(0.88), palette.accent], center: .center),
                         style: StrokeStyle(lineWidth: 14, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .shadow(color: palette.accent.opacity(0.65), radius: 10)
