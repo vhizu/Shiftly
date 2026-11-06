@@ -435,7 +435,6 @@ struct HomeView: View {
                     .font(.subheadline).foregroundStyle(.white.opacity(0.76))
                     .padding(17).shiftlyGlass(radius: 22)
             }
-            HomeMascotMood(mood: .idle, now: now)
             Button("Начать внеплановую смену") { store.startWork(); ShiftlyFeedback.medium() }
                 .buttonStyle(ShiftlyPrimaryButtonStyle())
         }
