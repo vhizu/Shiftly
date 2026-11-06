@@ -92,69 +92,34 @@ func timeString(_ seconds: TimeInterval) -> String {
     return String(format: "%02d:%02d:%02d", n / 3600, (n / 60) % 60, n % 60)
 }
 
-// Mascot fades into the *full* screen backdrop. No fixed-height dark panels.
+// Character art is already cut out; only the silhouette fades into the backdrop.
+// Keep her face above the timer card, never bury it under the glass.
 struct HomeMascotBackdrop: View {
-    let onBreak: Bool
-    let remainingSingle: TimeInterval
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("shiftly.motion") private var motionEnabled = true
-    @State private var floating = false
-    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-    private var imageName: String {
-        onBreak && remainingSingle > 120 ? "MascotBreak" : "MascotWork"
-    }
-    private var shouldAnimate: Bool { motionEnabled && !reduceMotion && !lowPower }
+    let scene: MascotScene
 
     var body: some View {
         GeometryReader { geo in
-            let width = min(geo.size.width * 1.28, 560)
-            ZStack(alignment: .topTrailing) {
-                Image(imageName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: width)
-                    .offset(x: width * 0.15, y: shouldAnimate && floating ? -6 : 4)
-                    .mask {
-                        LinearGradient(stops: [
-                            .init(color: .white, location: 0.00),
-                            .init(color: .white, location: 0.55),
-                            .init(color: .white.opacity(0.75), location: 0.70),
-                            .init(color: .clear, location: 0.96)
-                        ], startPoint: .top, endPoint: .bottom)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                // This is full-height and seamless, unlike the old 78% rectangle.
-                LinearGradient(stops: [
-                    .init(color: Color.black.opacity(0.22), location: 0),
-                    .init(color: Color.black.opacity(0.05), location: 0.34),
-                    .init(color: Color.clear, location: 0.65),
-                    .init(color: Color.black.opacity(0.20), location: 1)
-                ], startPoint: .leading, endPoint: .trailing)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
+            let portraitWidth = min(geo.size.width * 0.98, 470)
+            Image(scene.assetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: portraitWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .offset(x: geo.size.width * 0.10, y: 49)
+                .mask {
+                    LinearGradient(stops: [
+                        .init(color: .white, location: 0),
+                        .init(color: .white, location: 0.40),
+                        .init(color: .white.opacity(0.85), location: 0.57),
+                        .init(color: .clear, location: 0.86)
+                    ], startPoint: .top, endPoint: .bottom)
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
         }
         .ignoresSafeArea(edges: .bottom)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear { updateMotion() }
-        .onChange(of: motionEnabled) { _, _ in updateMotion() }
-        .onChange(of: reduceMotion) { _, _ in updateMotion() }
-        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-            lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-            updateMotion()
-        }
-    }
-
-    private func updateMotion() {
-        if shouldAnimate {
-            withAnimation(.easeInOut(duration: 3.3).repeatForever(autoreverses: true)) { floating = true }
-        } else {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { floating = false }
-        }
     }
 }
 
@@ -162,7 +127,8 @@ struct HomeMascotMood: View {
     let mood: MascotMood
     let now: Date
     @AppStorage("shiftly.talkFrequency") private var talkFrequency = "normal"
-    @State private var taps = 0
+    let taps: Int
+    let onTap: () -> Void
 
     private var phrase: String {
         let interval: Double = talkFrequency == "rare" ? 900 : talkFrequency == "often" ? 120 : 300
@@ -173,10 +139,7 @@ struct HomeMascotMood: View {
     }
 
     var body: some View {
-        Button {
-            taps += 1
-            ShiftlyFeedback.light()
-        } label: {
+        Button(action: onTap) {
             Label(phrase, systemImage: "sparkles")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white)
@@ -196,7 +159,7 @@ struct HomeView: View {
     @EnvironmentObject private var store: ShiftStore
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
     @State private var showQuickPastBreak = false
-    @State private var showFocus = false
+    @State private var mascotTapCount = 0
     @State private var confirmEnd = false
     @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     private var palette: ShiftlyPalette { ShiftlyPalette(rawValue: themeName) ?? .violet }
@@ -213,6 +176,8 @@ struct HomeView: View {
                 let activeLimit = active?.type == .lunch ? 30 : store.perBreakLimitMinutes
                 let singleRemaining = active.map { Double(activeLimit * 60) - now.timeIntervalSince($0.start) }
                     ?? Double(activeLimit * 60)
+                let scene = MascotScene.home(session: session, active: active,
+                                             recentFinished: recentSession, now: now)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 13) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -227,14 +192,13 @@ struct HomeView: View {
                         if let session {
                             let untilEnd = max(0, (session.end ?? session.start.addingTimeInterval(12 * 3600)).timeIntervalSince(now))
                             let remaining = Double(session.breakLimitMinutes * 60) - store.breakSeconds(session, now: now)
-                            Color.clear.frame(height: 96)
-                                .overlay(alignment: .bottomLeading) {
-                                    HomeMascotMood(mood: mood(session: session, active: active, singleRemaining: singleRemaining, remaining: remaining, untilEnd: untilEnd, now: now), now: now)
-                                }
+                            mascotHero(mood: mood(session: session, active: active, singleRemaining: singleRemaining,
+                                                  remaining: remaining, untilEnd: untilEnd, now: now), now: now)
                             activeCard(session: session, now: now, active: active,
                                        singleRemaining: singleRemaining, totalRemaining: remaining, untilEnd: untilEnd)
                             actionButtons(active: active)
                         } else {
+                            mascotHero(mood: scene == .success ? .finished : .idle, now: now)
                             idleContent(now: now)
                         }
 
@@ -267,9 +231,7 @@ struct HomeView: View {
                 .background {
                     ZStack {
                         ShiftlyBackdrop()
-                        if session != nil {
-                            HomeMascotBackdrop(onBreak: active != nil, remainingSingle: singleRemaining)
-                        }
+                        HomeMascotBackdrop(scene: scene)
                     }
                 }
             }
@@ -281,7 +243,6 @@ struct HomeView: View {
             .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
                 lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
             }
-            .sheet(isPresented: $showFocus) { ShiftlyFocusView() }
             .sheet(isPresented: $showQuickPastBreak) {
                 if let session = recentSession { QuickPastBreakEditor(sessionID: session.id) }
                 else { NavigationStack { BreakHubView() } }
@@ -293,6 +254,28 @@ struct HomeView: View {
                 Text("Это закроет текущую смену и остановит активный перерыв.")
             }
         }
+    }
+
+    private func mascotHero(mood: MascotMood, now: Date) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            Button {
+                mascotTapCount += 1
+                ShiftlyFeedback.light()
+            } label: {
+                Color.clear.frame(maxWidth: .infinity).frame(height: 218)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Поговорить с операторшей")
+
+            HomeMascotMood(mood: mood, now: now, taps: mascotTapCount) {
+                mascotTapCount += 1
+                ShiftlyFeedback.light()
+            }
+            .frame(maxWidth: 260, alignment: .leading)
+            .padding(.bottom, 7)
+        }
+        .frame(height: 218)
     }
 
     private func mood(session: WorkSession, active: BreakSession?, singleRemaining: TimeInterval,
@@ -377,20 +360,18 @@ struct HomeView: View {
                 }
                 .buttonStyle(ShiftlyPrimaryButtonStyle())
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 11), GridItem(.flexible(), spacing: 11)], spacing: 11) {
+            HStack(spacing: 11) {
                 if active == nil {
                     Button {
                         store.startBreak(kind: .lunch)
                         ShiftlyFeedback.medium()
-                    } label: { Label("Обед · 30 мин", systemImage: "fork.knife")
-                        .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18) }
+                    } label: {
+                        Label("Обед · 30 мин", systemImage: "fork.knife")
+                            .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18)
+                    }
                 }
                 Button { showQuickPastBreak = true; ShiftlyFeedback.light() } label: {
                     Label("Забытый перерыв", systemImage: "clock.arrow.circlepath")
-                        .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18)
-                }
-                Button { showFocus = true; ShiftlyFeedback.light() } label: {
-                    Label("Фокус", systemImage: "scope")
                         .frame(maxWidth: .infinity).frame(height: 58).shiftlyGlassControl(radius: 18)
                 }
             }

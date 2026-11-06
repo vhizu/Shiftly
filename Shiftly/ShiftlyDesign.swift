@@ -278,50 +278,6 @@ struct ShiftlyStatChip: View {
     }
 }
 
-struct ShiftlyFocusView: View {
-    @EnvironmentObject private var store: ShiftStore
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            TimelineView(.periodic(from: .now, by: 1)) { tick in
-                let session = store.current
-                let activeBreak = session?.breaks.last(where: { $0.end == nil })
-                let kindLimit = activeBreak?.type == .lunch ? 30 : store.perBreakLimitMinutes
-                let remaining = activeBreak.map { Double(kindLimit * 60) - tick.date.timeIntervalSince($0.start) }
-                    ?? session.map { Double($0.breakLimitMinutes * 60) - store.breakSeconds($0, now: tick.date) }
-                    ?? 0
-                VStack(spacing: 27) {
-                    Spacer()
-                    Image(systemName: activeBreak == nil ? "moon.stars.fill" : "cup.and.saucer.fill")
-                        .font(.system(size: 38)).foregroundStyle(.purple)
-                    Text(activeBreak == nil ? "Остаток отдыха" : activeBreak?.type == .lunch ? "Текущий обед" : "Текущий перекур")
-                        .font(.headline).foregroundStyle(.secondary)
-                    ShiftRing(remaining: remaining,
-                              total: Double((activeBreak == nil ? (session?.breakLimitMinutes ?? 120) : kindLimit) * 60),
-                              subtitle: activeBreak == nil ? "ЛИМИТ СМЕНЫ" : activeBreak?.type == .lunch ? "ОБЕД · 30 МИН" : "ПЕРЕКУР")
-                    if session != nil {
-                        Button(activeBreak == nil ? "Начать перекур" : activeBreak?.type == .lunch ? "Завершить обед" : "Вернулся к работе") { store.toggleBreak() }
-                            .buttonStyle(ShiftlyPrimaryButtonStyle())
-                        if activeBreak == nil {
-                            Button("Обед · 30 минут") { store.startBreak(kind: .lunch) }
-                                .buttonStyle(.bordered)
-                        }
-                    } else {
-                        Text("Сейчас нет активной смены").foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-                .padding(28)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .background(ShiftlyBackdrop())
-            .navigationTitle("Режим фокуса")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
-        }
-    }
-}
-
 struct ShiftlyWeekBars: View {
     let sessions: [WorkSession]
     @AppStorage("shiftly.theme") private var themeName = ShiftlyPalette.violet.rawValue
