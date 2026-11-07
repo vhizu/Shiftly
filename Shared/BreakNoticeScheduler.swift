@@ -22,9 +22,15 @@ enum BreakNoticeScheduler {
             ("total15", totalRemaining - 900, "Осталось 15 минут отдыха на смену", "Общий лимит скоро закончится"),
             ("total5", totalRemaining - 300, "Осталось 5 минут отдыха на смену", "Проверь общий лимит"),
             ("total0", totalRemaining, "Общий лимит отдыха исчерпан", "Останови перерыв, когда вернёшься к работе"),
-            ("forgot", 45 * 60, "Shiftly 💜 · Перерыв ещё идёт?", "Если уже работаешь, заверши перерыв")
+            ("forgot", max(singleRemaining + 300, kind == .lunch ? 35 * 60 : 20 * 60),
+             "Shiftly 💜 · Перерыв ещё идёт?", "Если уже работаешь, заверши перерыв")
         ]
+        let prefs = UserDefaults.standard
+        func enabled(_ key: String) -> Bool { (prefs.object(forKey: key) as? Bool) ?? true }
         for (id, delay, title, message) in notices where delay > 1 {
+            if id.hasPrefix("single") && !enabled("shiftly.remind.break") { continue }
+            if id.hasPrefix("total") && !enabled("shiftly.remind.limit") { continue }
+            if id == "forgot" && !enabled("shiftly.remind.missed") { continue }
             let notification = UNMutableNotificationContent()
             notification.title = title
             notification.body = message

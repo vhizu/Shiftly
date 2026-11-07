@@ -35,12 +35,12 @@ struct MoreView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 11) {
-                    ShiftlySectionHeader(title: "Журнал и история")
+                    ShiftlySectionHeader(title: "История и заметки")
                     NavigationLink { HistoryView() } label: {
                         ShiftlyMenuRow(symbol: "clock.arrow.circlepath", title: "История", subtitle: "Перекуры, обеды и отчёты", accent: accent)
                     }
-                    NavigationLink { LineJournalView() } label: {
-                        ShiftlyMenuRow(symbol: "wrench.adjustable.fill", title: "Журнал линии", subtitle: "Заметки оператора", accent: .orange)
+                    NavigationLink { WorkNotesView() } label: {
+                        ShiftlyMenuRow(symbol: "wrench.adjustable.fill", title: "Рабочие заметки", subtitle: "Ручной ввод, простои и ремонт", accent: .orange)
                     }
                     ShiftlySectionHeader(title: "Отдых")
                         .padding(.top, 8)
@@ -212,7 +212,10 @@ struct HomeView: View {
                                        singleRemaining: singleRemaining, totalRemaining: remaining, untilEnd: untilEnd)
                             actionButtons(active: active)
                         } else {
-                            mascotHero(mood: scene == .success ? .finished : .idle, now: now)
+                            mascotHero(mood: scene == .success ? .finished :
+                                       (store.nextScheduledShift(after: now).map {
+                                            $0.interval.start.timeIntervalSince(now) < 2 * 3600
+                                       } == true ? .soon : .idle), now: now)
                             idleContent(now: now)
                         }
 
@@ -554,32 +557,33 @@ struct PayrollView: View {
         NavigationStack {
             ScrollView {
                 let result = payroll(for: store, settings: pay, month: month)
-                let forecast = PayrollProjection.calculate(store: store, settings: pay, month: month)
+                let earnings = EarningsCalculator.month(store: store, settings: pay, date: month)
                 VStack(alignment: .leading, spacing: 14) {
                     DatePicker("Месяц", selection: $month, displayedComponents: .date)
                         .padding(14).shiftlyGlass(radius: 18)
                     VStack(alignment: .leading, spacing: 10) {
                         Text("ПРОГНОЗ ЗАРПЛАТЫ")
                             .font(.caption2.bold()).tracking(1.4).foregroundStyle(.white.opacity(0.73))
-                        Text(forecast.total, format: .currency(code: "RUB"))
+                        Text(earnings.total, format: .currency(code: "RUB"))
                             .font(.system(size: 33, weight: .bold, design: .rounded))
                             .foregroundStyle(.white).minimumScaleFactor(0.7).lineLimit(1)
                         HStack {
                             Text("Уже начислено · оценка")
                             Spacer()
-                            Text(result.estimated, format: .currency(code: "RUB"))
+                            Text(earnings.actual, format: .currency(code: "RUB"))
                         }.font(.subheadline).foregroundStyle(.white.opacity(0.80))
-                        ProgressView(value: min(1, max(0, forecast.total / max(1, salaryGoal)))).tint(violet)
-                        Text("Осталось по графику: \(forecast.upcomingShifts) смен")
+                        ProgressView(value: min(1, max(0, earnings.total / max(1, salaryGoal)))).tint(violet)
+                        Text("Смен в прогнозе: \(earnings.projectedShifts)")
                             .font(.caption).foregroundStyle(.white.opacity(0.75))
                     }
                     .padding(18).shiftlyGlass(radius: 23, emphasis: true)
+                    EarningsCalendarView(settings: pay, month: month)
                     ShiftlySectionHeader(title: "Отработанное время")
                     VStack(spacing: 12) {
                         payRow("Учтено рабочих часов", String(format: "%.1f ч", result.normalHours))
                         payRow("Ночные часы (22–06)", String(format: "%.1f ч", result.nightHours))
                         payRow("Подработки без записи", String(format: "%.1f ч", result.overtimeHours))
-                        payRow("Будущие смены · оценка", forecast.future.formatted(.currency(code: "RUB")))
+                        payRow("Будущие смены · оценка", earnings.forecast.formatted(.currency(code: "RUB")))
                     }
                     .padding(16).shiftlyGlass(radius: 20)
                     ShiftlySectionHeader(title: "Ставки и цель")
@@ -623,110 +627,6 @@ struct PayrollView: View {
         }.font(.subheadline)
     }
 
-}
-
-struct CalendarView: View {
-    @EnvironmentObject var store: ShiftStore
-    @State private var month = Calendar.current.startOfDay(for: Date())
-    @State private var extraDate = Date()
-    @State private var night = false
-    @State private var message = ""
-    @State private var editDay: EditableScheduleDay? = nil
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 18) {
-                    HStack {
-                        Button { month = Calendar.current.date(byAdding: .month, value: -1, to: month)! } label: { Image(systemName: "chevron.left") }
-                        Spacer()
-                        Text(ruMonth(month)).font(.headline)
-                        Spacer()
-                        Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
-                    }
-                    NavigationLink { ScheduleEditorView() } label: {
-                        ShiftlyMenuRow(symbol: "repeat", title: "Настроить мой цикл",
-                                        subtitle: "День · ночь · выходной · любые повторения", accent: .purple)
-                    }
-                    .buttonStyle(.plain)
-                    Text("Нажми на дату, чтобы изменить только этот день — например, поставить отпуск или больничный.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    let days = monthDays()
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 5) {
-                        ForEach(["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
-                        ForEach(0..<leadingBlanks(), id: \.self) { _ in Color.clear.frame(height: 55) }
-                        ForEach(days, id: \.self) { day in
-                            let label = store.dayLabel(day)
-                            let hasExtra = store.data.extras.contains { Calendar.current.isDate($0.start, inSameDayAs: day) }
-                            let breakMinutes = store.data.sessions.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
-                                .reduce(0.0) { $0 + store.breakSeconds($1) / 60 }
-                            Button {
-                                editDay = EditableScheduleDay(date: day)
-                                ShiftlyFeedback.light()
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Text(day.formatted(.dateTime.day())).font(.subheadline.bold())
-                                    Text(label).font(.caption.bold())
-                                        .foregroundStyle(label == "Н" ? .purple : label == "Д" ? .green : label == "О" ? .cyan : label == "Б" ? .orange : .secondary)
-                                    if hasExtra { Circle().fill(.orange).frame(width: 6, height: 6) }
-                                    if breakMinutes > 0 {
-                                        Capsule().fill(Color.pink.opacity(min(1, 0.3 + breakMinutes / 150)))
-                                            .frame(width: 21, height: 3)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity).frame(height: 52)
-                                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                                    Calendar.current.isDateInToday(day) ? Color.purple :
-                                    store.dayOverride(on: day) != nil ? Color.cyan.opacity(0.65) : Color.clear,
-                                    lineWidth: 1.5))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("\(day.formatted(.dateTime.day().month())), \(store.dayKind(on: day).title). Изменить")
-                        }
-                    }
-                    Text("Д — день · Н — ночь · В — выходной · О — отпуск · Б — больничный · оранжевая точка — подработка")
-                        .font(.caption).foregroundStyle(.secondary)
-                    NavigationLink { NextShiftView() } label: {
-                        ShiftlyMenuRow(symbol: "calendar", title: "Следующая смена", subtitle: "Время до выхода на работу", accent: .cyan)
-                    }.buttonStyle(.plain)
-                    Divider()
-                    Text("Добавить подработку").font(.headline)
-                    DatePicker("Дата", selection: $extraDate, displayedComponents: .date)
-                    Toggle("Ночная (20:00–08:00)", isOn: $night)
-                    Button("Добавить 12-часовую смену") {
-                        message = store.addExtra(extraDate, night: night) ? "Подработка добавлена" : "Пересечение с другой сменой — добавление отменено"
-                    }.buttonStyle(.borderedProminent)
-                    if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
-                    ForEach(store.data.extras) { extra in
-                        HStack {
-                            Circle().fill(.orange).frame(width: 9, height: 9)
-                            Text(extra.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Locale(identifier: "ru_RU"))))
-                            Spacer()
-                            Button(role: .destructive) { store.removeExtra(extra.id) } label: { Image(systemName: "trash") }
-                        }.font(.subheadline)
-                    }
-                    Text("Проверка правила 42 часов требует уточнения условий предприятия.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(16).frame(maxWidth: .infinity)
-            }.scrollIndicators(.hidden).shiftlyTabClearance().background(ShiftlyBackdrop()).navigationTitle("График")
-            .sheet(item: $editDay) { selected in
-                ScheduleDayEditor(date: selected.date)
-                    .environmentObject(store)
-                    .presentationDragIndicator(.visible)
-            }
-        }
-    }
-    func monthDays() -> [Date] {
-        let cal = Calendar.current
-        let start = cal.date(from: cal.dateComponents([.year, .month], from: month))!
-        let count = cal.range(of: .day, in: .month, for: start)!.count
-        return (0..<count).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
-    }
-    func leadingBlanks() -> Int {
-        let cal = Calendar.current
-        let first = cal.date(from: cal.dateComponents([.year, .month], from: month))!
-        return (cal.component(.weekday, from: first) + 5) % 7
-    }
 }
 
 struct HistoryView: View {
@@ -783,6 +683,9 @@ struct SettingsView: View {
     @AppStorage("shiftly.haptics") private var haptics = true
     @AppStorage("shiftly.autoAtmosphere") private var autoAtmosphere = true
     @AppStorage("shiftly.talkFrequency") private var talkFrequency = "normal"
+    @AppStorage("shiftly.remind.break") private var notifyBreak = true
+    @AppStorage("shiftly.remind.limit") private var notifyLimit = true
+    @AppStorage("shiftly.remind.missed") private var notifyMissed = true
 
     private var accent: Color { (ShiftlyPalette(rawValue: themeName) ?? .violet).accent }
 
@@ -833,6 +736,15 @@ struct SettingsView: View {
                     settingsToggle("Напоминания о смене", detail: "За 1 час и за 15 минут", icon: "bell",
                                    isOn: Binding(get: { store.data.remindEnabled ?? true }, set: { store.setReminders($0) }))
                     settingsDivider
+                    settingsToggle("Конец перерыва", detail: "5, 2, 1 минута и окончание", icon: "timer",
+                                   isOn: $notifyBreak)
+                    settingsDivider
+                    settingsToggle("Лимит отдыха", detail: "Когда остаётся мало минут", icon: "hourglass",
+                                   isOn: $notifyLimit)
+                    settingsDivider
+                    settingsToggle("Незавершённый перерыв", detail: "Напомнить, если таймер ещё идёт", icon: "exclamationmark.circle",
+                                   isOn: $notifyMissed)
+                    settingsDivider
                     Button { BreakAlerts.requestPermission() } label: {
                         settingsRow("Разрешить уведомления", detail: "Открыть запрос iOS", icon: "bell.badge") {
                             Image(systemName: "arrow.up.right")
@@ -841,7 +753,7 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    settingsNote("Текущий цикл: 2 дневные · выходной · 2 ночные · 3 выходных. Первая ночь — 4 ноября 2026.")
+                     settingsNote("Изменение настроек уведомлений применяется к текущему перерыву и будущим сменам.")
                 }
 
                 settingsGroup("Внешний вид", icon: "paintpalette") {
@@ -911,7 +823,7 @@ struct SettingsView: View {
                     settingsDivider
                     settingsToggle("Тактильная отдача", detail: "Отклик на нажатия", icon: "hand.tap",
                                    isOn: $haptics)
-                    settingsNote("144 реплики доступны без интернета. Нажми на реплику операторши, чтобы сменить её.")
+                    settingsNote("\(MascotLines.phrases.values.reduce(0) { $0 + $1.count }) офлайн-реплик. Коснись подписи операторши, чтобы получить новую.")
                 }
 
                 settingsGroup("Dynamic Island", icon: "waveform.path") {
@@ -959,6 +871,9 @@ struct SettingsView: View {
         .tint(accent)
         .background(ShiftlyBackdrop())
         .navigationTitle("Настройки")
+        .onChange(of: notifyBreak) { _, _ in ShiftReminders.refreshActiveBreak(store: store) }
+        .onChange(of: notifyLimit) { _, _ in ShiftReminders.refreshActiveBreak(store: store) }
+        .onChange(of: notifyMissed) { _, _ in ShiftReminders.refreshActiveBreak(store: store) }
     }
 
     @ViewBuilder private func settingsGroup<Content: View>(
@@ -1081,100 +996,6 @@ struct ShiftRing: View {
         .frame(width: compact ? 146 : 208, height: compact ? 146 : 208)
         .padding(.vertical, compact ? 2 : 8)
         .accessibilityElement(children: .combine)
-    }
-}
-
-struct LineJournalView: View {
-    @EnvironmentObject var store: ShiftStore
-    @State private var stream = "910"
-    @State private var category = "Заметка"
-    @State private var details = ""
-    @State private var duration = 0
-    @State private var editing: LineNote?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 13) {
-                ShiftlySectionHeader(title: "Новая запись")
-                VStack(alignment: .leading, spacing: 12) {
-                    Picker("Ручей", selection: $stream) {
-                        ForEach(["910", "911", "912", "Другой"], id: \.self) { Text($0) }
-                    }
-                    Picker("Событие", selection: $category) {
-                        ForEach(["Заметка", "Остановка", "Ремонт", "Переналадка", "Замена рулона", "Запуск"], id: \.self) { Text($0) }
-                    }
-                    TextField("Что произошло?", text: $details, axis: .vertical)
-                        .lineLimit(2...5)
-                        .padding(12)
-                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-                    Stepper("Простой: \(duration) мин", value: $duration, in: 0...720, step: 1)
-                    Button {
-                        store.addNote(LineNote(date: Date(), stream: stream, category: category,
-                                               details: details, durationMinutes: duration))
-                        details = ""; duration = 0
-                    } label: {
-                        Label("Добавить запись", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(ShiftlyPrimaryButtonStyle())
-                    .disabled(details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding(16).shiftlyGlass(radius: 20)
-                ShiftlySectionHeader(title: "История событий")
-                if store.notes.isEmpty {
-                    Text("Записей пока нет").foregroundStyle(.white.opacity(0.73))
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(15)
-                        .shiftlyGlass(radius: 18)
-                }
-                ForEach(store.notes.sorted(by: { $0.date > $1.date })) { note in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("\(note.category) · ручей \(note.stream)")
-                                .font(.subheadline.bold()).foregroundStyle(.white)
-                            Spacer()
-                            if note.durationMinutes > 0 {
-                                Text("\(note.durationMinutes) мин").font(.caption.bold())
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                        Text(note.details).font(.subheadline).foregroundStyle(.white.opacity(0.84))
-                        Text(ruDate(note.date)).font(.caption2)
-                            .foregroundStyle(.white.opacity(0.67))
-                        HStack {
-                            Button("Изменить") { editing = note }
-                            Spacer()
-                            Button("Удалить", role: .destructive) { store.removeNote(note.id) }
-                        }
-                        .font(.caption.bold())
-                    }
-                    .padding(15).shiftlyGlass(radius: 19)
-                }
-            }
-            .padding(16).frame(maxWidth: .infinity)
-        }
-        .scrollIndicators(.hidden)
-        .background(ShiftlyBackdrop())
-        .navigationTitle("Журнал линии")
-        .sheet(item: $editing) { note in NoteEditor(note: note) }
-    }
-}
-
-
-struct NoteEditor: View {
-    @EnvironmentObject var store: ShiftStore
-    @Environment(\.dismiss) private var dismiss
-    @State var note: LineNote
-    var body: some View {
-        NavigationStack {
-            Form {
-                DatePicker("Время", selection: $note.date)
-                TextField("Ручей", text: $note.stream)
-                TextField("Событие", text: $note.category)
-                TextField("Описание", text: $note.details, axis: .vertical)
-                Stepper("Простой: \(note.durationMinutes) мин", value: $note.durationMinutes, in: 0...720)
-            }
-            .scrollContentBackground(.hidden).background(ShiftlyBackdrop()).navigationTitle("Редактирование")
-            .toolbar { Button("Сохранить") { store.updateNote(note); dismiss() } }
-        }
     }
 }
 

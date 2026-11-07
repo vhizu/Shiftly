@@ -363,18 +363,36 @@ struct ShiftlyUndoAction: Identifiable {
     }
 
     func setLimit(_ minutes: Int) { data.limitMinutes = max(1, minutes); save() }
-    func addExtra(_ date: Date, night: Bool) -> Bool {
+    func extraConflictReason(_ date: Date, night: Bool) -> String? {
         let cal = Calendar.current
         let start = cal.date(bySettingHour: night ? 20 : 8, minute: 0, second: 0, of: date) ?? date
         let proposed = DateInterval(start: start, duration: 12 * 3600)
-        if data.extras.contains(where: { proposed.intersects(DateInterval(start: $0.start, end: $0.end)) }) { return false }
+        if data.extras.contains(where: { proposed.intersects(DateInterval(start: $0.start, end: $0.end)) }) {
+            return "Уже есть подработка на это время"
+        }
         if ShiftScheduleRules.conflict(with: proposed, cycle: data.customSchedule,
-                                      overrides: data.scheduleOverrides ?? []) != nil { return false }
+                                      overrides: data.scheduleOverrides ?? []) != nil {
+            return "Пересекается со сменой по графику"
+        }
         if data.sessions.contains(where: { session in
             proposed.intersects(DateInterval(start: session.start,
                 end: max(session.start.addingTimeInterval(1), session.end ?? session.start.addingTimeInterval(12 * 3600))))
-        }) { return false }
-        data.extras.append(ExtraShift(start: start, isNight: night)); data.extras.sort { $0.start < $1.start }; save(); synchronize(); ShiftReminders.schedule(store: self); return true
+        }) {
+            return "Пересекается с уже записанной сменой"
+        }
+        return nil
+    }
+
+    func addExtra(_ date: Date, night: Bool) -> Bool {
+        guard extraConflictReason(date, night: night) == nil else { return false }
+        let cal = Calendar.current
+        let start = cal.date(bySettingHour: night ? 20 : 8, minute: 0, second: 0, of: date) ?? date
+        data.extras.append(ExtraShift(start: start, isNight: night))
+        data.extras.sort { $0.start < $1.start }
+        save()
+        synchronize()
+        ShiftReminders.schedule(store: self)
+        return true
     }
     func removeExtra(_ id: UUID) { data.extras.removeAll { $0.id == id }; save(); ShiftReminders.schedule(store: self) }
     // Entire app reads the same schedule, including one-off leave and sick days.

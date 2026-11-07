@@ -174,7 +174,12 @@ struct ScheduleDayEditor: View {
                                     Spacer()
                                     if chosen == kind { Image(systemName: "checkmark.circle.fill").foregroundStyle(.purple) }
                                 }
-                                .padding(.vertical, 14)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 13)
+                                .background(chosen == kind ? scheduleColor(kind).opacity(0.16) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(
+                                    chosen == kind ? scheduleColor(kind).opacity(0.52) : .clear, lineWidth: 1))
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -220,7 +225,7 @@ struct ScheduleDayEditor: View {
     }
 }
 
-private func scheduleColor(_ kind: ShiftDayKind) -> Color {
+func scheduleColor(_ kind: ShiftDayKind) -> Color {
     switch kind {
     case .day: return Color(red: 0.38, green: 0.85, blue: 0.66)
     case .night: return Color(red: 0.80, green: 0.55, blue: 0.96)

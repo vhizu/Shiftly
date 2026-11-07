@@ -77,6 +77,20 @@ import Foundation
         precondition(customRoundtrip.customSchedule?.days == [.day, .night, .off])
         precondition(customRoundtrip.scheduleOverrides?.first?.kind == .vacation)
         precondition(customRoundtrip.sessions.count == 1, "Schedule edits must preserve history")
-        print("PASS: legacy JSON, lunch, custom cycle, single-day overrides, night intervals, overlap rules")
+        let expected = DateInterval(start: Date(timeIntervalSince1970: 10_000), duration: 12 * 3600)
+        let actual = DateInterval(start: expected.start.addingTimeInterval(12 * 60),
+                                  duration: 12 * 3600)
+        precondition(!EarningsMath.shouldCountPlan(expected, recorded: [actual]),
+                     "Recorded shifts must replace scheduled shifts")
+        precondition(EarningsMath.shouldCountPlan(expected, recorded: []))
+        let actualPay = EarningsMath.amount(rate: 250, hours: 11.5, nightHours: 7.5,
+                                            nightMultiplier: 1.2, overtimeMultiplier: 1.5,
+                                            overtime: false)
+        precondition(abs(actualPay - 3250) < 0.001, "Night premium must be separate")
+        let extraPay = EarningsMath.amount(rate: 250, hours: 12, nightHours: 0,
+                                           nightMultiplier: 1.2, overtimeMultiplier: 1.5,
+                                           overtime: true)
+        precondition(abs(extraPay - 4500) < 0.001, "Overtime multiplier calculation")
+        print("PASS: legacy JSON, lunch, schedule, overlap, salary and deduplication rules")
     }
 }

@@ -364,44 +364,8 @@ struct PayrollProjection {
 
     @MainActor
     static func calculate(store: ShiftStore, settings: PayrollSettings, month: Date) -> PayrollProjection {
-        let actual = payroll(for: store, settings: settings, month: month).estimated
-        let now = Date()
-        let cal = Calendar.current
-        guard let monthRange = cal.dateInterval(of: .month, for: month),
-              monthRange.end > now else {
-            return PayrollProjection(future: 0, total: actual, upcomingShifts: 0)
-        }
-        var future = 0.0
-        var count = 0
-        let days = cal.range(of: .day, in: .month, for: month)?.count ?? 31
-        let first = monthRange.start
-        var planned: [(interval: DateInterval, extra: Bool)] = []
-        for offset in 0..<days {
-            guard let date = cal.date(byAdding: .day, value: offset, to: first),
-                  let interval = store.regularInterval(on: date) else { continue }
-            planned.append((interval, false))
-        }
-        for extra in store.data.extras {
-            planned.append((DateInterval(start: extra.start, end: extra.end), true))
-        }
-        for item in planned {
-            guard let inMonth = item.interval.intersection(with: monthRange),
-                  inMonth.end > now else { continue }
-            // A completed session is already represented by actual payroll.
-            if let existing = store.data.sessions.first(where: {
-                abs($0.start.timeIntervalSince(item.interval.start)) < 60
-            }), existing.end != nil { continue }
-            let start = max(inMonth.start, now)
-            guard inMonth.end > start else { continue }
-            let remaining = DateInterval(start: start, end: inMonth.end)
-            let hours = remaining.duration / 3600
-            let night = nightHours(in: remaining)
-            let base = max(0, settings.hourlyRate)
-            let multiplier = item.extra ? max(0, settings.overtimeMultiplier) : 1.0
-            future += base * (hours * multiplier + night * max(0, settings.nightMultiplier - 1))
-            count += 1
-        }
-        return PayrollProjection(future: future, total: actual + future,
-                                 upcomingShifts: count)
+        let ledger = EarningsCalculator.month(store: store, settings: settings, date: month)
+        return PayrollProjection(future: ledger.forecast, total: ledger.total,
+                                 upcomingShifts: ledger.projectedShifts)
     }
 }
