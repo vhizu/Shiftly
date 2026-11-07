@@ -763,92 +763,171 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                settingsGroup("Лимит на новую смену") {
-                    Picker("Минуты", selection: Binding(get: { store.data.limitMinutes }, set: { store.setLimit($0) })) {
-                        ForEach([60, 90, 120, 150, 180, 210, 240], id: \.self) { Text("\($0) мин").tag($0) }
+            VStack(alignment: .leading, spacing: 23) {
+                settingsGroup("Отдых и лимиты", icon: "timer") {
+                    settingsRow("Лимит на смену", detail: "Общий запас отдыха", icon: "hourglass") {
+                        Picker("Лимит на смену", selection: Binding(
+                            get: { store.data.limitMinutes },
+                            set: { store.setLimit($0) }
+                        )) {
+                            ForEach([60, 90, 120, 150, 180, 210, 240], id: \.self) {
+                                Text("\($0) мин").tag($0)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
                     }
-                    .pickerStyle(.menu)
-                    settingsNote("Текущая смена сохраняет лимит, установленный при её запуске.")
-                }
-                settingsGroup("Один перекур") {
-                    Picker("Минут на перекур", selection: Binding(get: { store.perBreakLimitMinutes }, set: { store.setPerBreakLimit($0) })) {
-                        ForEach([5, 10, 15, 20, 30], id: \.self) { Text("\($0) мин").tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    settingsNote("По умолчанию 15 минут. Каждый перекур расходует общий лимит отдыха.")
-                }
-                settingsGroup("Обед") {
-                    Label("Обед — 30 минут", systemImage: "fork.knife")
-                    settingsNote("Обед и перекуры расходуют общий запас 120/150 минут. В истории учитываются отдельно.")
-                }
-                settingsGroup("График") {
-                    Toggle("Автоматический учёт", isOn: Binding(get: { store.autoEnabled }, set: { store.setAuto($0) }))
                     settingsDivider
-                    Toggle("Напоминания за 1 час и 15 минут", isOn: Binding(get: { store.data.remindEnabled ?? true }, set: { store.setReminders($0) }))
+                    settingsRow("Один перекур", detail: "Лимит одного перерыва", icon: "cup.and.saucer") {
+                        Picker("Один перекур", selection: Binding(
+                            get: { store.perBreakLimitMinutes },
+                            set: { store.setPerBreakLimit($0) }
+                        )) {
+                            ForEach([5, 10, 15, 20, 30], id: \.self) {
+                                Text("\($0) мин").tag($0)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    settingsDivider
+                    settingsRow("Обед", detail: "Входит в общий лимит", icon: "fork.knife") {
+                        Text("30 мин")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.86))
+                    }
+                    settingsNote("Новый лимит применяется со следующей смены. Обеды и перекуры списываются из одного запаса.")
+                }
+
+                settingsGroup("График и уведомления", icon: "calendar") {
+                    settingsToggle("Автоматический учёт", detail: "Запуск смен по расписанию", icon: "calendar.badge.clock",
+                                   isOn: Binding(get: { store.autoEnabled }, set: { store.setAuto($0) }))
+                    settingsDivider
+                    settingsToggle("Напоминания о смене", detail: "За 1 час и за 15 минут", icon: "bell",
+                                   isOn: Binding(get: { store.data.remindEnabled ?? true }, set: { store.setReminders($0) }))
                     settingsDivider
                     Button { BreakAlerts.requestPermission() } label: {
-                        Label("Разрешить уведомления", systemImage: "bell.badge")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    settingsNote("Текущий цикл: 2 дня → выходной → 2 ночи → 3 выходных. 4 ноября 2026 — первая ночь.")
-                }
-                settingsGroup("Liquid Glass · оформление") {
-                    Picker("Цветовая тема", selection: $themeName) {
-                        ForEach(ShiftlyPalette.allCases) { palette in
-                            Text(palette.label).tag(palette.rawValue)
+                        settingsRow("Разрешить уведомления", detail: "Открыть запрос iOS", icon: "bell.badge") {
+                            Image(systemName: "arrow.up.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(accent)
                         }
                     }
-                    .pickerStyle(.menu)
-                    HStack(spacing: 13) {
+                    .buttonStyle(.plain)
+                    settingsNote("Текущий цикл: 2 дневные · выходной · 2 ночные · 3 выходных. Первая ночь — 4 ноября 2026.")
+                }
+
+                settingsGroup("Внешний вид", icon: "paintpalette") {
+                    settingsRow("Цветовая тема", detail: "Палитра приложения", icon: "paintbrush") {
+                        Picker("Цветовая тема", selection: $themeName) {
+                            ForEach(ShiftlyPalette.allCases) { palette in
+                                Text(palette.label).tag(palette.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    HStack(spacing: 0) {
                         ForEach(ShiftlyPalette.allCases) { palette in
                             Button {
-                                withAnimation(.easeInOut(duration: 0.25)) { themeName = palette.rawValue }
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    themeName = palette.rawValue
+                                }
+                                ShiftlyFeedback.light()
                             } label: {
                                 Circle()
-                                    .fill(LinearGradient(colors: [palette.accent, palette.secondary], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 38, height: 38)
-                                    .overlay(Circle().stroke(.white.opacity(themeName == palette.rawValue ? 0.95 : 0), lineWidth: 2.5))
+                                    .fill(LinearGradient(colors: [palette.accent, palette.secondary],
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 37, height: 37)
+                                    .overlay {
+                                        Circle().strokeBorder(.white.opacity(themeName == palette.rawValue ? 0.92 : 0.16),
+                                                              lineWidth: themeName == palette.rawValue ? 2.4 : 0.8)
+                                    }
+                                    .overlay {
+                                        if themeName == palette.rawValue {
+                                            Image(systemName: "checkmark")
+                                                .font(.caption2.bold())
+                                                .foregroundStyle(.white)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(palette.label)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 3)
                     settingsDivider
-                    Toggle("Неоновый ночной градиент", isOn: $neonNight)
-                    Toggle("Плавные анимации", isOn: $motionEnabled)
-                    Toggle("Атмосфера дня и ночи", isOn: $autoAtmosphere)
-                    settingsNote("На iOS 26 используется системный Liquid Glass. Энергосбережение и уменьшение движения приостанавливают фоновые анимации.")
+                    settingsToggle("Ночной градиент", detail: "Мягкое свечение в темноте", icon: "moon.stars",
+                                   isOn: $neonNight)
+                    settingsDivider
+                    settingsToggle("Анимации", detail: "Движение фоновых эффектов", icon: "sparkles",
+                                   isOn: $motionEnabled)
+                    settingsDivider
+                    settingsToggle("Атмосфера дня и ночи", detail: "Подстраивается под смену", icon: "circle.lefthalf.filled",
+                                   isOn: $autoAtmosphere)
+                    settingsNote("На iOS 26 используется системный Liquid Glass. Режим энергосбережения и настройка уменьшения движения могут отключать эффекты.")
                 }
-                settingsGroup("Операторша 💜") {
-                    Picker("Частота реплик", selection: $talkFrequency) {
-                        Text("Редко").tag("rare")
-                        Text("Обычно").tag("normal")
-                        Text("Часто").tag("often")
+
+                settingsGroup("Операторша", icon: "bubble.left.and.bubble.right") {
+                    settingsRow("Реплики", detail: "Как часто разговаривает", icon: "text.bubble") {
+                        Picker("Частота реплик", selection: $talkFrequency) {
+                            Text("Редко").tag("rare")
+                            Text("Обычно").tag("normal")
+                            Text("Часто").tag("often")
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
                     }
-                    .pickerStyle(.menu)
-                    Toggle("Тактильная отдача", isOn: $haptics)
-                    settingsNote("144 офлайн-реплики. Нажми на подпись операторши, чтобы услышать другую.")
+                    settingsDivider
+                    settingsToggle("Тактильная отдача", detail: "Отклик на нажатия", icon: "hand.tap",
+                                   isOn: $haptics)
+                    settingsNote("144 реплики доступны без интернета. Нажми на реплику операторши, чтобы сменить её.")
                 }
-                settingsGroup("Dynamic Island · диагностика") {
-                    Label("Разрешены системой: \(live.enabled ? "да" : "нет")", systemImage: "waveform.path")
+
+                settingsGroup("Dynamic Island", icon: "waveform.path") {
+                    settingsRow("Live Activity", detail: "Доступность в системе", icon: "waveform.path") {
+                        HStack(spacing: 5) {
+                            Circle().fill(live.enabled ? Color.green : Color.orange)
+                                .frame(width: 6, height: 6)
+                            Text(live.enabled ? "Доступно" : "Выключено")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                        }
+                    }
                     Text(live.status)
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.80))
+                        .foregroundStyle(.white.opacity(0.74))
                         .textSelection(.enabled)
-                    settingsNote("Запусти смену и перерыв, затем проверь этот статус.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(11)
+                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                    settingsNote("Для проверки запусти смену и любой перерыв.")
                 }
-                settingsGroup("О приложении") {
-                    Text("Shiftly \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") · сборка \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")")
-                    settingsNote("История хранится локально. Перед обновлением сохрани JSON-бэкап в Файлы.")
+
+                settingsGroup("О приложении", icon: "info.circle") {
+                    settingsRow("Версия Shiftly", detail: "Установленная сборка", icon: "app.badge") {
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                                .font(.subheadline.weight(.semibold))
+                            Text("build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.65))
+                        }
+                    }
+                    settingsNote("Данные хранятся локально. Перед обновлением сохрани JSON-копию в «Файлы».")
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 9)
+            .padding(.bottom, 20)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 96)
+            Color.clear.frame(height: 108)
         }
         .scrollIndicators(.hidden)
         .foregroundStyle(.white)
@@ -858,28 +937,81 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private func settingsGroup<Content: View>(
-        _ title: String, @ViewBuilder content: () -> Content
+        _ title: String, icon: String, @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            ShiftlySectionHeader(title: title)
-            VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(accent)
+                Text(title.uppercased())
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .tracking(1.25)
+                    .foregroundStyle(.white.opacity(0.74))
+            }
+            .padding(.leading, 5)
+
+            VStack(alignment: .leading, spacing: 13) {
                 content()
             }
-            .font(.subheadline)
-            .padding(16)
+            .padding(15)
             .shiftlyGlass(radius: 22)
         }
     }
 
+    private func settingsRow<Trailing: View>(
+        _ title: String, detail: String, icon: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(alignment: .center, spacing: 11) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 35, height: 35)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.62))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
+        }
+        .frame(minHeight: 48)
+    }
+
+    private func settingsToggle(
+        _ title: String, detail: String, icon: String, isOn: Binding<Bool>
+    ) -> some View {
+        settingsRow(title, detail: detail, icon: icon) {
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .tint(accent)
+        }
+    }
+
     private var settingsDivider: some View {
-        Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+        Rectangle()
+            .fill(.white.opacity(0.11))
+            .frame(height: 1)
+            .padding(.leading, 46)
     }
 
     private func settingsNote(_ value: String) -> some View {
-        Text(value)
-            .font(.caption)
-            .foregroundStyle(.white.opacity(0.68))
-            .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 7) {
+            Image(systemName: "info.circle")
+                .font(.caption)
+                .foregroundStyle(accent.opacity(0.85))
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.64))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 2)
     }
 }
 
