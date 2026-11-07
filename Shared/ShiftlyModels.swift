@@ -55,4 +55,6 @@ struct ShiftData: Codable {
     var scheduleOverrides: [ShiftDayOverride]? = nil
     // New schedule rules must never retroactively create or rewrite completed sessions.
     var scheduleRevisedAt: Date? = nil
+    // Optional. Old backup JSON remains valid; v1.13 stores monthly salary overrides.
+    var payrollBackup: PayrollBackup? = nil
 }

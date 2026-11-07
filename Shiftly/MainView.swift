@@ -509,7 +509,7 @@ struct StatsView: View {
                         achievement("Дисциплина", unlocked: within >= 5, progress: within, goal: 5)
                     }
                     .padding(14).shiftlyGlass(radius: 20)
-                    Text("Данные пересчитываются по фактически прошедшему времени.")
+                    Text("Здесь рабочее время указано за вычетом отмеченных перерывов. Для зарплаты отдельное правило: 12 ч смена → 11 оплачиваемых ч.")
                         .font(.caption).foregroundStyle(Color.white.opacity(0.72))
                 }
                 .padding(16).frame(maxWidth: .infinity)
@@ -546,87 +546,6 @@ struct StatsView: View {
             ProgressView(value: Double(min(progress,goal)), total: Double(goal)).tint(violet)
         }.padding(.vertical, 4)
     }
-}
-
-struct PayrollView: View {
-    @EnvironmentObject var store: ShiftStore
-    @StateObject private var pay = PayrollSettings()
-    @State private var month = Date()
-    @AppStorage("shiftly.salaryGoal") private var salaryGoal = 120_000.0
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                let result = payroll(for: store, settings: pay, month: month)
-                let earnings = EarningsCalculator.month(store: store, settings: pay, date: month)
-                VStack(alignment: .leading, spacing: 14) {
-                    DatePicker("Месяц", selection: $month, displayedComponents: .date)
-                        .padding(14).shiftlyGlass(radius: 18)
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("ПРОГНОЗ ЗАРПЛАТЫ")
-                            .font(.caption2.bold()).tracking(1.4).foregroundStyle(.white.opacity(0.73))
-                        Text(earnings.total, format: .currency(code: "RUB"))
-                            .font(.system(size: 33, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white).minimumScaleFactor(0.7).lineLimit(1)
-                        HStack {
-                            Text("Уже начислено · оценка")
-                            Spacer()
-                            Text(earnings.actual, format: .currency(code: "RUB"))
-                        }.font(.subheadline).foregroundStyle(.white.opacity(0.80))
-                        ProgressView(value: min(1, max(0, earnings.total / max(1, salaryGoal)))).tint(violet)
-                        Text("Смен в прогнозе: \(earnings.projectedShifts)")
-                            .font(.caption).foregroundStyle(.white.opacity(0.75))
-                    }
-                    .padding(18).shiftlyGlass(radius: 23, emphasis: true)
-                    EarningsCalendarView(settings: pay, month: month)
-                    ShiftlySectionHeader(title: "Отработанное время")
-                    VStack(spacing: 12) {
-                        payRow("Учтено рабочих часов", String(format: "%.1f ч", result.normalHours))
-                        payRow("Ночные часы (22–06)", String(format: "%.1f ч", result.nightHours))
-                        payRow("Подработки без записи", String(format: "%.1f ч", result.overtimeHours))
-                        payRow("Будущие смены · оценка", earnings.forecast.formatted(.currency(code: "RUB")))
-                    }
-                    .padding(16).shiftlyGlass(radius: 20)
-                    ShiftlySectionHeader(title: "Ставки и цель")
-                    VStack(spacing: 14) {
-                        payInput("Цель за месяц, ₽", value: $salaryGoal, width: 122)
-                        payInput("₽ за час", value: $pay.hourlyRate, width: 100)
-                        payInput("Ночные ×", value: $pay.nightMultiplier, width: 90)
-                        payInput("Подработка ×", value: $pay.overtimeMultiplier, width: 90)
-                        payInput("Премия, ₽", value: $pay.monthlyBonus, width: 100)
-                    }
-                    .padding(16).shiftlyGlass(radius: 20)
-                    Text("Расчёт предварительный: будущие смены считаются по 12 часов. Налоги, премиальные условия и правила предприятия могут изменить итог.")
-                        .font(.caption).foregroundStyle(Color.white.opacity(0.73))
-                }
-                .frame(maxWidth: .infinity).padding(16)
-            }
-            .scrollIndicators(.hidden)
-            .shiftlyTabClearance()
-            .background(ShiftlyBackdrop())
-            .navigationTitle("Зарплата")
-        }
-    }
-    private func payRow(_ name: String, _ amount: String) -> some View {
-        HStack(spacing: 12) {
-            Text(name).foregroundStyle(.white.opacity(0.82))
-            Spacer(minLength: 8)
-            Text(amount).foregroundStyle(.white).bold().lineLimit(1).minimumScaleFactor(0.7)
-        }.font(.subheadline)
-    }
-    private func payInput(_ title: String, value: Binding<Double>, width: CGFloat) -> some View {
-        HStack(spacing: 10) {
-            Text(title).foregroundStyle(.white.opacity(0.84))
-            Spacer(minLength: 8)
-            TextField("0", value: value, format: .number)
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.trailing)
-                .frame(width: width)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 9).padding(.vertical, 7)
-                .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-        }.font(.subheadline)
-    }
-
 }
 
 struct HistoryView: View {

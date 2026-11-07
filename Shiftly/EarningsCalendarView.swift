@@ -34,7 +34,7 @@ struct EarningsCalendarView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain)
-            Text("Премия: \(ledger.bonus.formatted(.currency(code: "RUB"))) · Включена один раз за месяц")
+            Text("В календаре: оплата 11 ч за смену, ночные и вредность. Премия за прошлый месяц, налоги и аванс рассчитываются ниже отдельно.")
                 .font(.caption).foregroundStyle(.white.opacity(0.7))
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], id: \.self) { name in
@@ -73,17 +73,16 @@ struct EarningsCalendarView: View {
                     Text(selected.date.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "ru_RU"))))
                         .font(.subheadline.bold())
                     Text(selected.description).font(.caption).foregroundStyle(.white.opacity(0.76))
-                    HStack {
-                        Text("Записи: \(selected.actual.formatted(.currency(code: "RUB")))")
-                        Spacer()
-                        Text("План: \(selected.forecast.formatted(.currency(code: "RUB")))")
-                    }.font(.caption2).foregroundStyle(.white.opacity(0.8))
+                    HStack(spacing: 9) {
+                        amountTile("Факт", selected.actual, symbol: "checkmark.circle")
+                        amountTile("План", selected.forecast, symbol: "calendar")
+                    }
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
             }
-            Text("Точка: зелёная — фактическая запись, фиолетовая — план. Оранжевая сумма — подработка. Суммы ориентировочные, без налогов.")
+            Text("Зелёная точка — запись, фиолетовая — график. Оранжевая сумма — подработка. Плановые смены без фактической записи остаются прогнозом.")
                 .font(.caption).foregroundStyle(.white.opacity(0.66))
         }
         .padding(16)

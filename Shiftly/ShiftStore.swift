@@ -49,6 +49,11 @@ struct ShiftlyUndoAction: Identifiable {
     func setReminders(_ enabled: Bool) { data.remindEnabled = enabled; save(); ShiftReminders.schedule(store: self) }
     func addNote(_ note: LineNote) { if data.notes == nil { data.notes = [] }; data.notes!.append(note); save() }
     func removeNote(_ id: UUID) { data.notes?.removeAll { $0.id == id }; save() }
+    func setPayrollBackup(_ backup: PayrollBackup) {
+        guard data.payrollBackup != backup else { return }
+        data.payrollBackup = backup
+        save()
+    }
     func synchronize(now: Date = Date()) {
         applyExternalBreakStart()
         applyExternalBreakEnd()

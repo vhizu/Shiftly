@@ -1,13 +1,19 @@
 import Foundation
 
-// A calendar-day ledger. A recorded session takes precedence over its planned
-// shift, so the same 12-hour shift is never paid twice in the forecast.
+// Ledger by shift start date: a 20:00–08:00 night belongs to the date it starts.
+// Stored work sessions supersede their planned copies (including overtime).
 struct EarningsDay: Identifiable {
     var id: Date { date }
     let date: Date
     let amount: Double
     let actual: Double
     let forecast: Double
+    let basic: Double
+    let nightPremium: Double
+    let overtimePremium: Double
+    let hazard: Double
+    let paidHours: Double
+    let paidNightHours: Double
     let isOvertime: Bool
     let description: String
     let shiftCount: Int
@@ -17,8 +23,13 @@ struct EarningsMonth {
     let days: [EarningsDay]
     let actual: Double
     let forecast: Double
-    let bonus: Double
-    var total: Double { actual + forecast + bonus }
+    let basic: Double
+    let nightPremium: Double
+    let overtimePremium: Double
+    let hazard: Double
+    let paidHours: Double
+    let paidNightHours: Double
+    var total: Double { actual + forecast }
     var projectedShifts: Int { days.reduce(0) { $0 + $1.shiftCount } }
 }
 
@@ -27,60 +38,94 @@ struct EarningsMonth {
         let calendar = Calendar.current
         guard let range = calendar.dateInterval(of: .month, for: date),
               let numberOfDays = calendar.range(of: .day, in: .month, for: range.start)?.count else {
-            return EarningsMonth(days: [], actual: 0, forecast: 0, bonus: 0)
+            return EarningsMonth(days: [], actual: 0, forecast: 0, basic: 0, nightPremium: 0,
+                                 overtimePremium: 0, hazard: 0, paidHours: 0, paidNightHours: 0)
         }
-        let rate = max(0, settings.hourlyRate)
         let now = Date()
-        var rows: [EarningsDay] = []
+        // Precompute all recorded intervals once rather than scanning them per day and plan.
+        let recorded: [DateInterval] = store.data.sessions.map { session in
+            let end = max(session.start.addingTimeInterval(1), session.end ?? now)
+            return DateInterval(start: session.start, end: end)
+        }
+        var result: [EarningsDay] = []
         for index in 0..<numberOfDays {
             guard let day = calendar.date(byAdding: .day, value: index, to: range.start) else { continue }
             let sessions = store.data.sessions.filter { calendar.isDate($0.start, inSameDayAs: day) }
             let extras = store.data.extras.filter { calendar.isDate($0.start, inSameDayAs: day) }
-            let regular = store.regularInterval(on: day)
-            var actualValue = 0.0
-            var forecastValue = 0.0
-            var kinds: [String] = []
+            var fact = 0.0
+            var planAmount = 0.0
+            var basic = 0.0
+            var nightAddition = 0.0
+            var extraAddition = 0.0
+            var hazard = 0.0
+            var paidHours = 0.0
+            var paidNights = 0.0
+            var labels: [String] = []
             var overtime = false
+            var countedPlans = 0
+
+            func include(_ parts: ShiftPayParts) {
+                basic += parts.basic
+                nightAddition += parts.nightPremium
+                extraAddition += parts.overtimePremium
+                hazard += parts.hazard
+                paidHours += parts.paidHours
+                paidNights += parts.paidNightHours
+            }
+
             for session in sessions {
                 let end = max(session.start, session.end ?? now)
-                let net = max(0, end.timeIntervalSince(session.start) - store.breakSeconds(session, now: end)) / 3600
-                let night = min(net, nightHours(in: DateInterval(start: session.start, end: max(end, session.start.addingTimeInterval(1)))))
-                let isExtra = extras.contains { abs($0.start.timeIntervalSince(session.start)) < 3600 }
-                actualValue += EarningsMath.amount(rate: rate, hours: net, nightHours: night,
-                                                   nightMultiplier: settings.nightMultiplier,
-                                                   overtimeMultiplier: settings.overtimeMultiplier,
-                                                   overtime: isExtra)
-                overtime = overtime || isExtra
-                kinds.append(isExtra ? "Подработка · факт" : "Смена · факт")
+                let extra = extras.contains { abs($0.start.timeIntervalSince(session.start)) < 3600 }
+                let length = max(0, end.timeIntervalSince(session.start))
+                // Do not subtract the sum of rest timers a second time: each 12h
+                // factory shift already contains the 1h unpaid break allocation.
+                let rawNight = length > 0 ? nightHours(in: DateInterval(start: session.start, end: end)) : 0
+                let parts = EarningsMath.shift(rate: settings.hourlyRate, duration: length,
+                                               rawNightHours: rawNight,
+                                               paidPerShift: settings.paidHoursPerShift,
+                                               paidNightPerShift: settings.paidNightHoursPerShift,
+                                               nightMultiplier: settings.nightMultiplier,
+                                               overtimeMultiplier: settings.overtimeMultiplier,
+                                               hazardPercent: settings.hazardPercent, overtime: extra)
+                fact += parts.total
+                include(parts)
+                overtime = overtime || extra
+                labels.append(extra ? "Подработка · факт" : "Смена · факт")
             }
-            var planned: [(interval: DateInterval, extra: Bool)] = []
-            if let regular { planned.append((regular, false)) }
+
+            var planned: [(DateInterval, Bool)] = []
+            if let ordinary = store.regularInterval(on: day) { planned.append((ordinary, false)) }
             planned += extras.map { (DateInterval(start: $0.start, end: $0.end), true) }
-            for plan in planned {
-                // Count no planned entry intersecting a real session, including a
-                // session with slightly edited start time or a night across midnight.
-                let recorded = store.data.sessions.map { session -> DateInterval in
-                    let end = max(session.start.addingTimeInterval(1), session.end ?? now)
-                    return DateInterval(start: session.start, end: end)
-                }
-                if !EarningsMath.shouldCountPlan(plan.interval, recorded: recorded) { continue }
-                let hours = plan.interval.duration / 3600
-                let night = nightHours(in: plan.interval)
-                forecastValue += EarningsMath.amount(rate: rate, hours: hours, nightHours: night,
-                                                     nightMultiplier: settings.nightMultiplier,
-                                                     overtimeMultiplier: settings.overtimeMultiplier,
-                                                     overtime: plan.extra)
-                overtime = overtime || plan.extra
-                kinds.append(plan.extra ? "Подработка · план" : "По графику · план")
+            for (interval, extra) in planned {
+                guard EarningsMath.shouldCountPlan(interval, recorded: recorded) else { continue }
+                let parts = EarningsMath.shift(rate: settings.hourlyRate, duration: interval.duration,
+                                               rawNightHours: nightHours(in: interval),
+                                               paidPerShift: settings.paidHoursPerShift,
+                                               paidNightPerShift: settings.paidNightHoursPerShift,
+                                               nightMultiplier: settings.nightMultiplier,
+                                               overtimeMultiplier: settings.overtimeMultiplier,
+                                               hazardPercent: settings.hazardPercent, overtime: extra)
+                planAmount += parts.total
+                include(parts)
+                overtime = overtime || extra
+                labels.append(extra ? "Подработка · план" : "По графику · план")
+                countedPlans += 1
             }
-            rows.append(EarningsDay(date: day, amount: actualValue + forecastValue,
-                                    actual: actualValue, forecast: forecastValue,
-                                    isOvertime: overtime,
-                                    description: kinds.isEmpty ? "Выходной / без записей" : kinds.joined(separator: " · "),
-                                    shiftCount: planned.count + max(0, sessions.count - planned.count)))
+            result.append(EarningsDay(date: day, amount: fact + planAmount, actual: fact,
+                                      forecast: planAmount, basic: basic, nightPremium: nightAddition,
+                                      overtimePremium: extraAddition, hazard: hazard,
+                                      paidHours: paidHours, paidNightHours: paidNights,
+                                      isOvertime: overtime,
+                                      description: labels.isEmpty ? "Выходной / без записей" : labels.joined(separator: " · "),
+                                      shiftCount: sessions.count + countedPlans))
         }
-        return EarningsMonth(days: rows, actual: rows.reduce(0) { $0 + $1.actual },
-                             forecast: rows.reduce(0) { $0 + $1.forecast },
-                             bonus: max(0, settings.monthlyBonus))
+        return EarningsMonth(days: result, actual: result.reduce(0) { $0 + $1.actual },
+                             forecast: result.reduce(0) { $0 + $1.forecast },
+                             basic: result.reduce(0) { $0 + $1.basic },
+                             nightPremium: result.reduce(0) { $0 + $1.nightPremium },
+                             overtimePremium: result.reduce(0) { $0 + $1.overtimePremium },
+                             hazard: result.reduce(0) { $0 + $1.hazard },
+                             paidHours: result.reduce(0) { $0 + $1.paidHours },
+                             paidNightHours: result.reduce(0) { $0 + $1.paidNightHours })
     }
 }

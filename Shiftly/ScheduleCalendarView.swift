@@ -7,6 +7,7 @@ struct CalendarView: View {
     @State private var night = false
     @State private var message = ""
     @State private var editDay: EditableScheduleDay? = nil
+    @AppStorage("shiftly.pay.paidHours") private var paidHoursPerShift = 11.0
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 5), count: 7)
     private var cal: Calendar { .current }
     private var extraStart: Date {
@@ -98,7 +99,7 @@ struct CalendarView: View {
                             HStack {
                                 Text("ПРЕДПРОСМОТР").font(.caption2.bold()).tracking(1.2)
                                 Spacer()
-                                Text("12 часов").font(.caption.weight(.semibold))
+                                Text("12 ч · \(String(format: "%.0f", paidHoursPerShift)) оплач.").font(.caption.weight(.semibold))
                             }
                             .foregroundStyle(.white.opacity(0.65))
                             Text("\(ruDate(extraStart)) — \(extraStart.addingTimeInterval(12 * 3600).formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Locale(identifier: "ru_RU"))))")
