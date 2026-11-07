@@ -30,6 +30,53 @@ import Foundation
         precondition(decodedData.sessions.count == 1)
         precondition(decodedData.sessions[0].breaks[0].type == .smoke)
         precondition(decodedData.sessions[0].breaks[1].type == .lunch)
-        print("PASS: old JSON, lunch JSON, shared rest allowance, ShiftData roundtrip")
+        // The absent optional fields on 1.11.2 files must still decode as the legacy cycle.
+        precondition(decodedData.customSchedule == nil)
+        precondition(decodedData.scheduleOverrides == nil)
+        let calendar = Calendar(identifier: .gregorian)
+        var day = DateComponents(year: 2026, month: 11, day: 4)
+        day.hour = 12
+        let firstNight = calendar.date(from: day)!
+        precondition(ShiftScheduleRules.kind(on: firstNight, cycle: nil, overrides: [],
+                                             calendar: calendar) == .night,
+                     "Nov 4 legacy pattern must be night")
+        day.day = 3
+        let previous = calendar.date(from: day)!
+        precondition(ShiftScheduleRules.kind(on: previous, cycle: nil, overrides: [],
+                                             calendar: calendar) == .off)
+        day.day = 9
+        let nextCycle = calendar.date(from: day)!
+        precondition(ShiftScheduleRules.kind(on: nextCycle, cycle: nil, overrides: [],
+                                             calendar: calendar) == .day)
+
+        // User-defined arbitrary cycle; should repeat across the anchor, even in the past.
+        let custom = ShiftCycle(anchor: calendar.date(from: DateComponents(year: 2026, month: 11, day: 1))!,
+                                days: [.day, .night, .off])
+        day.day = 5
+        let customDay = calendar.date(from: day)!
+        precondition(custom.kind(on: customDay, calendar: calendar) == .night)
+        let changed = ShiftDayOverride(date: calendar.startOfDay(for: customDay), kind: .vacation)
+        precondition(ShiftScheduleRules.kind(on: customDay, cycle: custom,
+                                             overrides: [changed], calendar: calendar) == .vacation)
+        precondition(ShiftScheduleRules.interval(on: customDay, cycle: custom,
+                                                 overrides: [changed], calendar: calendar) == nil)
+        let night = ShiftScheduleRules.interval(on: customDay, cycle: custom,
+                                                 overrides: [], calendar: calendar)!
+        precondition(calendar.component(.hour, from: night.start) == 20)
+        precondition(night.duration == 12 * 3600)
+        precondition(ShiftScheduleRules.conflict(with: night, cycle: custom,
+                                                overrides: [], calendar: calendar) != nil)
+        precondition(ShiftScheduleRules.conflict(with: night, cycle: custom,
+                                                overrides: [changed], calendar: calendar) == nil)
+
+        var customizedData = decodedData
+        customizedData.customSchedule = custom
+        customizedData.scheduleOverrides = [changed]
+        customizedData.scheduleRevisedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let customRoundtrip = try JSONDecoder().decode(ShiftData.self, from: JSONEncoder().encode(customizedData))
+        precondition(customRoundtrip.customSchedule?.days == [.day, .night, .off])
+        precondition(customRoundtrip.scheduleOverrides?.first?.kind == .vacation)
+        precondition(customRoundtrip.sessions.count == 1, "Schedule edits must preserve history")
+        print("PASS: legacy JSON, lunch, custom cycle, single-day overrides, night intervals, overlap rules")
     }
 }

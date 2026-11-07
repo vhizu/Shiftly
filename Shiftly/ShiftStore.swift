@@ -52,12 +52,16 @@ struct ShiftlyUndoAction: Identifiable {
     func synchronize(now: Date = Date()) {
         applyExternalBreakStart()
         applyExternalBreakEnd()
+        finalizeExpiredAutomaticSessions(now: now)
         guard autoEnabled else { return }
         let cal = Calendar.current
         // Synchronize a bounded window, including overnight shifts and extra shifts.
         for offset in -14...1 {
             guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: now)) else { continue }
-            if let interval = regularInterval(on: day) { ensureSession(start: interval.start, end: interval.end, now: now) }
+            if let interval = regularInterval(on: day),
+               interval.start >= (data.scheduleRevisedAt ?? .distantPast) {
+                ensureSession(start: interval.start, end: interval.end, now: now)
+            }
         }
         for extra in data.extras { ensureSession(start: extra.start, end: extra.end, now: now) }
 
@@ -67,6 +71,7 @@ struct ShiftlyUndoAction: Identifiable {
         for offset in -1...0 {
             guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: now)),
                   let interval = regularInterval(on: day),
+                  interval.start >= (data.scheduleRevisedAt ?? .distantPast),
                   interval.start <= now, now < interval.end else { continue }
             ensureSession(start: interval.start, end: interval.end, now: now)
         }
@@ -110,6 +115,20 @@ struct ShiftlyUndoAction: Identifiable {
             BreakAlerts.stop()
         }
     }
+    private func finalizeExpiredAutomaticSessions(now: Date) {
+        var changed = false
+        for i in data.sessions.indices where data.sessions[i].isAutomatic == true && data.sessions[i].end == nil {
+            let plannedEnd = data.sessions[i].start.addingTimeInterval(12 * 3600)
+            guard plannedEnd <= now else { continue }
+            if let j = data.sessions[i].breaks.lastIndex(where: { $0.end == nil }) {
+                data.sessions[i].breaks[j].end = plannedEnd
+            }
+            data.sessions[i].end = plannedEnd
+            changed = true
+        }
+        if changed { save() }
+    }
+
     private func ensureSession(start: Date, end: Date, now: Date) {
         guard start <= now else { return }
         if let i = data.sessions.firstIndex(where: { abs($0.start.timeIntervalSince(start)) < 60 }) {
@@ -230,7 +249,7 @@ struct ShiftlyUndoAction: Identifiable {
         let cal = Calendar.current
         let today = cal.startOfDay(for: now)
         var candidates: [(interval: DateInterval, extra: Bool)] = []
-        for offset in 0...32 {
+        for offset in 0...max(32, (data.customSchedule?.days.count ?? 8) * 2) {
             guard let day = cal.date(byAdding: .day, value: offset, to: today),
                   let interval = regularInterval(on: day), interval.start > now else { continue }
             candidates.append((interval, false))
@@ -349,32 +368,78 @@ struct ShiftlyUndoAction: Identifiable {
         let start = cal.date(bySettingHour: night ? 20 : 8, minute: 0, second: 0, of: date) ?? date
         let proposed = DateInterval(start: start, duration: 12 * 3600)
         if data.extras.contains(where: { proposed.intersects(DateInterval(start: $0.start, end: $0.end)) }) { return false }
-        // Regular shifts: compare intervals from nearby days, including nights spanning midnight.
-        for offset in -1...1 {
-            guard let day = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: date)), let interval = regularInterval(on: day) else { continue }
-            if proposed.intersects(interval) { return false }
-        }
+        if ShiftScheduleRules.conflict(with: proposed, cycle: data.customSchedule,
+                                      overrides: data.scheduleOverrides ?? []) != nil { return false }
+        if data.sessions.contains(where: { session in
+            proposed.intersects(DateInterval(start: session.start,
+                end: max(session.start.addingTimeInterval(1), session.end ?? session.start.addingTimeInterval(12 * 3600))))
+        }) { return false }
         data.extras.append(ExtraShift(start: start, isNight: night)); data.extras.sort { $0.start < $1.start }; save(); synchronize(); ShiftReminders.schedule(store: self); return true
     }
     func removeExtra(_ id: UUID) { data.extras.removeAll { $0.id == id }; save(); ShiftReminders.schedule(store: self) }
-    // Nov 4, 2026 = cycle day 4 (first night). Cycle: D D O N N O O O.
+    // Entire app reads the same schedule, including one-off leave and sick days.
     func cycleIndex(on date: Date) -> Int {
-        let cal = Calendar.current
-        let anchor = cal.date(from: DateComponents(year: 2026, month: 11, day: 4))!
-        let delta = cal.dateComponents([.day], from: anchor, to: cal.startOfDay(for: date)).day ?? 0
-        return ((delta + 3) % 8 + 8) % 8
+        (data.customSchedule ?? .original).index(on: date)
+    }
+    func dayKind(on date: Date) -> ShiftDayKind {
+        ShiftScheduleRules.kind(on: date, cycle: data.customSchedule,
+                                overrides: data.scheduleOverrides ?? [])
+    }
+    func baseDayKind(on date: Date) -> ShiftDayKind {
+        (data.customSchedule ?? .original).kind(on: date)
+    }
+    func dayOverride(on date: Date) -> ShiftDayKind? {
+        data.scheduleOverrides?.last(where: { Calendar.current.isDate($0.date, inSameDayAs: date) })?.kind
     }
     func regularInterval(on day: Date) -> DateInterval? {
-        let index = cycleIndex(on: day)
-        let hour: Int
-        if index == 0 || index == 1 { hour = 8 }
-        else if index == 3 || index == 4 { hour = 20 }
-        else { return nil }
-        guard let start = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: day) else { return nil }
-        return DateInterval(start: start, duration: 12 * 3600)
+        ShiftScheduleRules.interval(on: day, cycle: data.customSchedule,
+                                    overrides: data.scheduleOverrides ?? [])
     }
-    func dayLabel(_ date: Date) -> String {
-        switch cycleIndex(on: date) { case 0,1: return "Д"; case 3,4: return "Н"; default: return "В" }
+    func dayLabel(_ date: Date) -> String { dayKind(on: date).shortLabel }
+
+    // Data is never deleted or rewritten when a pattern or a one-off day changes.
+    // Any future extra shift that would overlap the new regular schedule blocks the edit.
+    func setCycle(anchor: Date, days: [ShiftDayKind]) -> String? {
+        guard (1...31).contains(days.count), days.allSatisfy({ [.day, .night, .off].contains($0) }) else {
+            return "Цикл должен содержать от 1 до 31 дня: день, ночь или выходной"
+        }
+        let candidate = ShiftCycle(anchor: Calendar.current.startOfDay(for: anchor), days: days)
+        let now = Date()
+        for extra in data.extras where extra.end > now {
+            let proposed = DateInterval(start: extra.start, end: extra.end)
+            if ShiftScheduleRules.conflict(with: proposed, cycle: candidate,
+                                          overrides: data.scheduleOverrides ?? []) != nil {
+                return "Новый график пересекается с подработкой \(extra.start.formatted(date: .abbreviated, time: .shortened)). Сначала измени подработку."
+            }
+        }
+        data.customSchedule = candidate
+        data.scheduleRevisedAt = now
+        save()
+        synchronize(now: now)
+        ShiftReminders.schedule(store: self)
+        return nil
+    }
+
+    func setDayOverride(on date: Date, kind: ShiftDayKind?) -> String? {
+        let cal = Calendar.current
+        var proposedOverrides = data.scheduleOverrides ?? []
+        proposedOverrides.removeAll { cal.isDate($0.date, inSameDayAs: date) }
+        if let kind {
+            proposedOverrides.append(ShiftDayOverride(date: cal.startOfDay(for: date), kind: kind))
+        }
+        let now = Date()
+        for extra in data.extras where extra.end > now {
+            if ShiftScheduleRules.conflict(with: DateInterval(start: extra.start, end: extra.end),
+                                          cycle: data.customSchedule, overrides: proposedOverrides) != nil {
+                return "Изменение создаёт пересечение с подработкой. Сначала исправь её."
+            }
+        }
+        data.scheduleOverrides = proposedOverrides
+        data.scheduleRevisedAt = now
+        save()
+        synchronize(now: now)
+        ShiftReminders.schedule(store: self)
+        return nil
     }
     private func save() {
         if let raw = try? JSONEncoder().encode(data) {

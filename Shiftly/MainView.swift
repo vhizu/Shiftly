@@ -631,6 +631,7 @@ struct CalendarView: View {
     @State private var extraDate = Date()
     @State private var night = false
     @State private var message = ""
+    @State private var editDay: EditableScheduleDay? = nil
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -642,6 +643,13 @@ struct CalendarView: View {
                         Spacer()
                         Button { month = Calendar.current.date(byAdding: .month, value: 1, to: month)! } label: { Image(systemName: "chevron.right") }
                     }
+                    NavigationLink { ScheduleEditorView() } label: {
+                        ShiftlyMenuRow(symbol: "repeat", title: "Настроить мой цикл",
+                                        subtitle: "День · ночь · выходной · любые повторения", accent: .purple)
+                    }
+                    .buttonStyle(.plain)
+                    Text("Нажми на дату, чтобы изменить только этот день — например, поставить отпуск или больничный.")
+                        .font(.caption).foregroundStyle(.secondary)
                     let days = monthDays()
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 5) {
                         ForEach(["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
@@ -651,20 +659,32 @@ struct CalendarView: View {
                             let hasExtra = store.data.extras.contains { Calendar.current.isDate($0.start, inSameDayAs: day) }
                             let breakMinutes = store.data.sessions.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
                                 .reduce(0.0) { $0 + store.breakSeconds($1) / 60 }
-                            VStack(spacing: 4) {
-                                Text(day.formatted(.dateTime.day())).font(.subheadline.bold())
-                                Text(label).font(.caption.bold()).foregroundStyle(label == "Н" ? .purple : label == "Д" ? .green : .secondary)
-                                if hasExtra { Circle().fill(.orange).frame(width: 6, height: 6) }
-                                if breakMinutes > 0 {
-                                    Capsule().fill(Color.pink.opacity(min(1, 0.3 + breakMinutes / 150)))
-                                        .frame(width: 21, height: 3)
+                            Button {
+                                editDay = EditableScheduleDay(date: day)
+                                ShiftlyFeedback.light()
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Text(day.formatted(.dateTime.day())).font(.subheadline.bold())
+                                    Text(label).font(.caption.bold())
+                                        .foregroundStyle(label == "Н" ? .purple : label == "Д" ? .green : label == "О" ? .cyan : label == "Б" ? .orange : .secondary)
+                                    if hasExtra { Circle().fill(.orange).frame(width: 6, height: 6) }
+                                    if breakMinutes > 0 {
+                                        Capsule().fill(Color.pink.opacity(min(1, 0.3 + breakMinutes / 150)))
+                                            .frame(width: 21, height: 3)
+                                    }
                                 }
-                            }.frame(maxWidth: .infinity).frame(height: 52)
+                                .frame(maxWidth: .infinity).frame(height: 52)
                                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Calendar.current.isDateInToday(day) ? Color.purple : Color.clear, lineWidth: 1.5))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(
+                                    Calendar.current.isDateInToday(day) ? Color.purple :
+                                    store.dayOverride(on: day) != nil ? Color.cyan.opacity(0.65) : Color.clear,
+                                    lineWidth: 1.5))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(day.formatted(.dateTime.day().month())), \(store.dayKind(on: day).title). Изменить")
                         }
                     }
-                    Text("Д — день 08–20 · Н — ночь 20–08 · В — выходной · розовая полоска — отдых")
+                    Text("Д — день · Н — ночь · В — выходной · О — отпуск · Б — больничный · оранжевая точка — подработка")
                         .font(.caption).foregroundStyle(.secondary)
                     NavigationLink { NextShiftView() } label: {
                         ShiftlyMenuRow(symbol: "calendar", title: "Следующая смена", subtitle: "Время до выхода на работу", accent: .cyan)
@@ -689,6 +709,11 @@ struct CalendarView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(16).frame(maxWidth: .infinity)
             }.scrollIndicators(.hidden).shiftlyTabClearance().background(ShiftlyBackdrop()).navigationTitle("График")
+            .sheet(item: $editDay) { selected in
+                ScheduleDayEditor(date: selected.date)
+                    .environmentObject(store)
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
     func monthDays() -> [Date] {

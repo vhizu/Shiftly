@@ -1,4 +1,4 @@
-name: Build Shiftly 1.11.2 IPA
+name: Build Shiftly 1.11.3 IPA
 on:
   workflow_dispatch:
   push:
@@ -79,13 +79,20 @@ jobs:
           assert 'settingsRow("Лимит на смену"' in main, "Labeled rest limit selector missing"
           assert 'settingsToggle("Автоматический учёт"' in main, "Schedule toggle missing"
           assert 'Text(ruMonth(month))' in main, "Russian month heading missing"
+          assert 'ScheduleEditorView()' in main, "Calendar has no schedule editor"
+          assert 'ScheduleDayEditor(date:' in main, "Calendar cannot edit individual days"
+          assert Path('Shared/ShiftSchedule.swift').is_file(), "Shared schedule model missing"
+          assert Path('Shiftly/ScheduleEditor.swift').is_file(), "Schedule editor missing"
+          assert 'scheduleRevisedAt' in models and 'customSchedule' in models, "Legacy-safe schedule fields missing"
+          assert 'func setCycle(' in store and 'func setDayOverride(' in store, "Schedule persistence missing"
+          assert 'frame(width: 110, alignment: .trailing)' in live, "Lock-screen total time must align right"
 
-          print("Shiftly 1.11.2 source validations OK")
+          print("Shiftly 1.11.3 schedule + mascot validations OK")
           PYCODE
       - name: Test old JSON and lunch model without iOS UI
         run: |
           set -euo pipefail
-          swiftc Shared/ShiftlyModels.swift Tests/ModelCompatibility.swift -o "$RUNNER_TEMP/shiftly-model-tests"
+          swiftc Shared/ShiftSchedule.swift Shared/ShiftlyModels.swift Tests/ModelCompatibility.swift -o "$RUNNER_TEMP/shiftly-model-tests"
           "$RUNNER_TEMP/shiftly-model-tests"
       - name: Build unsigned app
         run: |
@@ -96,7 +103,7 @@ jobs:
           set -euo pipefail
           APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app"
           test -d "$APP"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "1.11.2"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "1.11.3"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "com.shiftly.app"
           for EXT in ShiftlyLive ShiftlyHomeWidget; do
             PLIST="$APP/PlugIns/$EXT.appex/Info.plist"
@@ -124,18 +131,18 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$EXT_PLIST"
             /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_PLIST"
           done
-          echo "Validated app 1.11.2 and both embedded extensions"
+          echo "Validated app 1.11.3 and both embedded extensions"
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Shiftly.app" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/Shiftly-1.11.2-unsigned.ipa" Payload
-          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.2-unsigned.ipa" | grep 'ShiftlyHomeWidget.appex/Info.plist'
-          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.2-unsigned.ipa" | grep 'ShiftlyLive.appex/Info.plist'
+          zip -qry "$GITHUB_WORKSPACE/Shiftly-1.11.3-unsigned.ipa" Payload
+          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.3-unsigned.ipa" | grep 'ShiftlyHomeWidget.appex/Info.plist'
+          unzip -l "$GITHUB_WORKSPACE/Shiftly-1.11.3-unsigned.ipa" | grep 'ShiftlyLive.appex/Info.plist'
       - uses: actions/upload-artifact@v4
         with:
-          name: Shiftly-1.11.2-unsigned-IPA
-          path: Shiftly-1.11.2-unsigned.ipa
+          name: Shiftly-1.11.3-unsigned-IPA
+          path: Shiftly-1.11.3-unsigned.ipa
           if-no-files-found: error

@@ -50,4 +50,9 @@ struct ShiftData: Codable {
     var remindEnabled: Bool? = nil
     // Optional: decoding backups made before 1.5 remains compatible.
     var perBreakLimitMinutes: Int? = nil
+    // Optional: legacy 1.11.2 backups decode without these new schedule fields.
+    var customSchedule: ShiftCycle? = nil
+    var scheduleOverrides: [ShiftDayOverride]? = nil
+    // New schedule rules must never retroactively create or rewrite completed sessions.
+    var scheduleRevisedAt: Date? = nil
 }

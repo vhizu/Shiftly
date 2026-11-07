@@ -1,29 +1,12 @@
-# Shiftly — iOS
+# Shiftly 1.11.3 — custom shift schedules
 
-Полный исходный проект Shiftly для iPhone. XcodeGen + GitHub Actions; unsigned IPA подписывается отдельно в GBox.
+* User-defined repeating day/night/off cycle anchored to a chosen date.
+* One-off date changes including vacation and sick leave, without overwriting shift history.
+* Extra shifts are kept separate, and overlapping schedule edits are refused.
+* Same schedule source drives calendar, automatic shift creation, reminders, next shift and earnings forecast.
+* Lock-screen activity aligns total remaining time beneath its label on the right.
 
-## 1.11.2 — настройки без визуального хаоса
+Data lives locally. Export your JSON backup before installing a new IPA.
 
-- Экран настроек переработан в компактные подписанные строки с понятной иерархией: название, пояснение, управление.
-- Лимит смены, один перекур и обед объединены в одну стеклянную карточку.
-- График, уведомления, внешний вид, реплики, диагностика и сведения о версии оформлены единообразно.
-- Управление и сохранённые настройки не изменены. Текущий формат JSON и данные смен остаются прежними.
-- Исправлен нижний отступ прокрутки настроек для плавающей панели вкладок.
-
-## 1.11.1 — этап 2: UI & Navigation
-
-- Нативный Liquid Glass tab bar больше не сворачивается в одну иконку при прокрутке.
-- У всех основных вкладок есть дополнительный нижний safe-area inset для доступа к кнопкам под плавающим таб-баром.
-- Переработан экран настроек: стеклянные группы вместо системного `Form` с непрозрачными ячейками.
-- Статистика: ровная сетка 2×3, отдельное время обеда, месяцы на русском; календарь тоже на русском.
-- Тема `Night Violet` визуально обновлена до строгой **Midnight Graphite**, сохранён raw value настройки для совместимости с уже установленными предпочтениями.
-- В архив включено исправление Swift-компиляции idle `HomeMascotMood`, внесённое ранее в ветку `dev/1.11`.
-- Данные, схема бэкапов, расчёт смен и Live Activity не менялись.
-
-## Установка исходников
-
-Скопируй **содержимое папки** в локальный репозиторий GitHub Desktop, находясь на ветке `dev/1.11`, не заменяя `.git`. Commit → Push origin. GitHub Actions соберёт unsigned IPA на Xcode 26.3.
-
-Перед тестированием экспортируй текущий JSON в «Файлы». Проверяй: видимость таб-бара при прокрутке, достижимость последних кнопок на главной, настройки, статистику, Dynamic Island и экран блокировки.
-
-**Важно:** синтаксическая проверка не заменяет компиляцию Xcode и испытание на iPhone.
+The full XcodeGen project is under `Shiftly`, `Shared`, `ShiftlyLive`, and `ShiftlyHomeWidget`.
+GitHub Actions uses `.github/workflows/build.yml`; `Workflow/build.yml` is a visible copy for iOS Files.

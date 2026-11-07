@@ -45,12 +45,17 @@ struct ShiftlyLiveWidget: Widget {
                         Text("ЗА СМЕНУ")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.78))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         Text(timerInterval: context.attributes.startedAt...context.state.totalDeadline,
                              countsDown: true, showsHours: true)
-                            .font(.caption.bold().monospacedDigit())
+                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                             .foregroundStyle(islandViolet)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
+                    .frame(width: 110, alignment: .trailing)
                 }
                 ProgressView(timerInterval: context.attributes.startedAt...context.state.deadline,
                              countsDown: true) { EmptyView() } currentValueLabel: { EmptyView() }
